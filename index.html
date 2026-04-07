@@ -234,7 +234,7 @@ function App() {
         "\n교사 메모:" + (mm || "없음");
     }).join("\n\n");
 
-    fetch("https://api.anthropic.com/v1/messages", {
+    fetch("https://claude-proxy.juninn9910.workers.dev", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
