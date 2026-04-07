@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>과정중심평가 관리</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f0f4f8; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const K = "pca_";
+
+function dbLoad(t) {
+  try {
+    var d = localStorage.getItem(K + t);
+    return d ? JSON.parse(d) : [];
+  } catch (e) { return []; }
+}
+
+function dbSave(t, d) {
+  try { localStorage.setItem(K + t, JSON.stringify(d)); } catch (e) {}
+}
+
+function uid() { return crypto.randomUUID(); }
+
+function Toast(props) {
+  useEffect(function () {
+    var t = setTimeout(props.done, 2000);
+    return function () { clearTimeout(t); };
+  }, []);
+  return (
+    <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", background:"#1e293b", color:"#fff", padding:"10px 24px", borderRadius:10, fontSize:14, fontWeight:600, zIndex:9999, boxShadow:"0 4px 20px rgba(0,0,0,0.25)" }}>
+      {props.msg}
+    </div>
+  );
+}
+
+function App() {
+  var [msg, setMsg] = useState("");
+  var [page, setPage] = useState("home");
+  var [dlg, setDlg] = useState(null);
+
+  var [CL, setCL] = useState(function () { return dbLoad("c"); });
+  var [ST, setST] = useState(function () { return dbLoad("s"); });
+  var [SB, setSB] = useState(function () { return dbLoad("b"); });
+  var [UN, setUN] = useState(function () { return dbLoad("u"); });
+  var [RB, setRB] = useState(function () { return dbLoad("r"); });
+  var [ME, setME] = useState(function () { return dbLoad("m"); });
+
+  var [gr, setGr] = useState("");
+  var [bn, setBn] = useState("");
+  var [sf, setSf] = useState({});
+  var [ns, setNs] = useState("");
+  var [sc, setSc] = useState("");
+  var [ss, setSs] = useState("");
+  var [nu, setNu] = useState("");
+  var [ecId, setEcId] = useState(null);
+  var [ecTx, setEcTx] = useState("");
+  var [eru, setEru] = useState("");
+  var [rh, setRh] = useState("");
+  var [rm, setRm] = useState("");
+  var [rl, setRl] = useState("");
+  var [ms, setMs] = useState("");
+  var [mt2, setMt2] = useState("");
+  var [mx, setMx] = useState({});
+  var [mlv, setMlv] = useState({});
+  var [as2, setAs2] = useState("");
+  var [at2, setAt2] = useState("");
+  var [ar, setAr] = useState("");
+  var [al, setAl] = useState(false);
+  var [ab, setAb] = useState([]);
+
+  function R() {
+    setCL(dbLoad("c")); setST(dbLoad("s")); setSB(dbLoad("b"));
+    setUN(dbLoad("u")); setRB(dbLoad("r")); setME(dbLoad("m"));
+  }
+
+  function getMM(si, ui2) {
+    var arr = dbLoad("m");
+    var m = arr.find(function (x) { return x.si === si && x.ui === ui2; });
+    return m ? (m.tx || "") : "";
+  }
+
+  function getMMLv(si, ui2) {
+    var arr = dbLoad("m");
+    var m = arr.find(function (x) { return x.si === si && x.ui === ui2; });
+    return m ? (m.lv || "") : "";
+  }
+
+  // CRUD
+  function addC() {
+    if (!gr || !bn) { setMsg("학년과 반을 선택하세요"); return; }
+    var nm = gr + "학년 " + bn + "반";
+    var arr = dbLoad("c");
+    if (arr.find(function (x) { return x.n === nm; })) { setMsg("이미 등록된 반"); return; }
+    arr.push({ id: uid(), n: nm });
+    dbSave("c", arr); R(); setMsg("✅ " + nm + " 등록"); setGr(""); setBn("");
+  }
+
+  function delC(cid) {
+    var s = dbLoad("s"); dbSave("s", s.filter(function (x) { return x.ci !== cid; }));
+    var b = dbLoad("b");
+    var dbIds = b.filter(function (x) { return x.ci === cid; }).map(function (x) { return x.id; });
+    dbSave("b", b.filter(function (x) { return x.ci !== cid; }));
+    var u = dbLoad("u"); dbSave("u", u.filter(function (x) { return dbIds.indexOf(x.bi) === -1; }));
+    var arr = dbLoad("c"); dbSave("c", arr.filter(function (x) { return x.id !== cid; }));
+    R(); setMsg("🗑 삭제 완료");
+  }
+
+  function gSF(ci) { return sf[ci] || { n: "", u: "" }; }
+  function sSF(ci, v) { setSf(function (p) { var o = Object.assign({}, p); o[ci] = v; return o; }); }
+
+  function addS(ci) {
+    var f = gSF(ci);
+    if (!f.n.trim() || !f.u) { setMsg("번호와 이름 입력"); return; }
+    var num = parseInt(f.u);
+    if (num < 1 || num > 7) { setMsg("번호는 1~7"); return; }
+    var arr = dbLoad("s");
+    if (arr.find(function (x) { return x.ci === ci && x.nu === num; })) { setMsg("번호 중복"); return; }
+    arr.push({ id: uid(), ci: ci, na: f.n.trim(), nu: num, ch: "" });
+    dbSave("s", arr); sSF(ci, { n: "", u: "" }); R(); setMsg("✅ 학생 등록");
+  }
+
+  function delS(sid) {
+    var arr = dbLoad("s"); dbSave("s", arr.filter(function (x) { return x.id !== sid; }));
+    R(); setMsg("🗑 삭제");
+  }
+
+  function saveCh() {
+    if (!ecId) return;
+    var arr = dbLoad("s");
+    var i = arr.findIndex(function (x) { return x.id === ecId; });
+    if (i >= 0) { arr[i].ch = ecTx; dbSave("s", arr); }
+    setEcId(null); setEcTx(""); R(); setMsg("✅ 특성 저장");
+  }
+
+  function addSB2() {
+    if (!ns.trim() || !sc) { setMsg("반 선택 + 과목명 입력"); return; }
+    var arr = dbLoad("b"); arr.push({ id: uid(), na: ns.trim(), ci: sc });
+    dbSave("b", arr); setNs(""); R(); setMsg("✅ 과목 등록");
+  }
+
+  function delSB2(bid) {
+    var u = dbLoad("u"); dbSave("u", u.filter(function (x) { return x.bi !== bid; }));
+    var arr = dbLoad("b"); dbSave("b", arr.filter(function (x) { return x.id !== bid; }));
+    R(); setMsg("🗑 삭제");
+  }
+
+  function addU() {
+    if (!ss || !nu.trim()) { setMsg("단원명 입력"); return; }
+    var arr = dbLoad("u");
+    var cnt = arr.filter(function (x) { return x.bi === ss; }).length;
+    arr.push({ id: uid(), bi: ss, na: nu.trim(), or: cnt + 1 });
+    dbSave("u", arr); setNu(""); R(); setMsg("✅ 단원 등록");
+  }
+
+  function delU(uid2) {
+    var r = dbLoad("r"); dbSave("r", r.filter(function (x) { return x.ui !== uid2; }));
+    var arr = dbLoad("u"); dbSave("u", arr.filter(function (x) { return x.id !== uid2; }));
+    R(); setMsg("🗑 삭제");
+  }
+
+  function saveRB2() {
+    if (!eru) return;
+    var arr = dbLoad("r");
+    var i = arr.findIndex(function (x) { return x.ui === eru; });
+    if (i >= 0) { arr[i] = { id: arr[i].id, ui: eru, h: rh, m: rm, l: rl }; }
+    else { arr.push({ id: uid(), ui: eru, h: rh, m: rm, l: rl }); }
+    dbSave("r", arr); R(); setMsg("✅ 평가기준 저장");
+  }
+
+  function ldRB(ui2) {
+    setEru(ui2);
+    var arr = dbLoad("r");
+    var r = arr.find(function (x) { return x.ui === ui2; });
+    setRh(r ? r.h || "" : ""); setRm(r ? r.m || "" : ""); setRl(r ? r.l || "" : "");
+  }
+
+  function ldMemos(sid, units2) {
+    var o = {}; var lv = {};
+    for (var i = 0; i < units2.length; i++) {
+      o[units2[i].id] = getMM(sid, units2[i].id);
+      lv[units2[i].id] = getMMLv(sid, units2[i].id);
+    }
+    setMx(o); setMlv(lv);
+  }
+
+  function saveMemo1(si, ui2) {
+    var tx = mx[ui2] || ""; var lv = mlv[ui2] || "";
+    var arr = dbLoad("m");
+    var i = arr.findIndex(function (x) { return x.si === si && x.ui === ui2; });
+    if (i >= 0) { arr[i].tx = tx; arr[i].lv = lv; }
+    else if (tx.trim() || lv) { arr.push({ id: uid(), si: si, ui: ui2, tx: tx, lv: lv }); }
+    dbSave("m", arr); R(); setMsg("✅ 저장");
+  }
+
+  function saveMemoAll(si) {
+    var arr = dbLoad("m");
+    var keys = Object.keys(mx);
+    for (var k = 0; k < keys.length; k++) {
+      var ui2 = keys[k]; var tx = mx[ui2] || ""; var lv = mlv[ui2] || "";
+      var i = arr.findIndex(function (x) { return x.si === si && x.ui === ui2; });
+      if (i >= 0) { arr[i].tx = tx; arr[i].lv = lv; }
+      else if (tx.trim() || lv) { arr.push({ id: uid(), si: si, ui: ui2, tx: tx, lv: lv }); }
+    }
+    dbSave("m", arr); R(); setMsg("✅ 전체 저장 완료");
+  }
+
+  // AI
+  function genAI(si, bi, callback) {
+    var allST = dbLoad("s"); var allSB = dbLoad("b"); var allUN = dbLoad("u"); var allRB = dbLoad("r");
+    var stu = allST.find(function (x) { return x.id === si; });
+    var sub = allSB.find(function (x) { return x.id === bi; });
+    if (!stu || !sub) { callback("정보 없음"); return; }
+    var us = allUN.filter(function (x) { return x.bi === bi; }).sort(function (a, b) { return a.or - b.or; });
+    var ud = us.map(function (u) {
+      var rb = allRB.find(function (x) { return x.ui === u.id; });
+      var mm = getMM(si, u.id);
+      var lv = getMMLv(si, u.id);
+      var lvLabel = lv === "h" ? "상" : lv === "m" ? "중" : lv === "l" ? "하" : "미선택";
+      return "단원:" + u.na + "\n교사 판단 도달수준: " + lvLabel +
+        "\n평가기준 상:" + (rb ? rb.h : "미등록") +
+        "\n평가기준 중:" + (rb ? rb.m : "미등록") +
+        "\n평가기준 하:" + (rb ? rb.l : "미등록") +
+        "\n교사 메모:" + (mm || "없음");
+    }).join("\n\n");
+
+    fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514", max_tokens: 1000,
+        system: "당신은 특수학교 교과학습발달상황 작성 전문가입니다.\n\n[작성 원칙]\n1. 모든 문장은 명사형 종결어미(~함, ~임)로 끝낸다.\n2. 상호명 사용 금지.\n3. 교사 개입 문구 전면 삭제.\n4. 학생이 수행한 결과만 기술.\n5. 능동형 서술('~보임' 금지).\n6. 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼되, 교사 메모의 구체적 내용을 자연스럽게 녹여 서술.\n7. 교사 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n8. 학생 특성을 고려.\n9. 3~5문장.\n10. 학생마다 반드시 다른 표현과 문장 구성.",
+        messages: [{ role: "user", content: "학생:" + stu.na + " " + stu.nu + "번\n특성:" + (stu.ch || "없음") + "\n과목:" + sub.na + "\n\n" + ud + "\n\n교과학습발달상황 초안 작성." }]
+      })
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (d) {
+      var text = (d.content && d.content[0] && d.content[0].text) || "생성 실패";
+      callback(text);
+    })
+    .catch(function (e) { callback("❌ 오류: " + e.message); });
+  }
+
+  function gen1() {
+    if (!at2 || !as2) { setMsg("학생·과목 선택"); return; }
+    setAl(true); setAr("");
+    genAI(at2, as2, function (result) { setAr(result); setAl(false); });
+  }
+
+  function genAll() {
+    if (!as2) { setMsg("과목 선택"); return; }
+    var allSB2 = dbLoad("b"); var allST2 = dbLoad("s");
+    var sub = allSB2.find(function (x) { return x.id === as2; });
+    if (!sub) return;
+    var sts = allST2.filter(function (x) { return x.ci === sub.ci; }).sort(function (a, b) { return a.nu - b.nu; });
+    if (!sts.length) { setMsg("학생 없음"); return; }
+    setAl(true); setAb([]);
+    var results = [];
+    var idx = 0;
+    function next() {
+      if (idx >= sts.length) { setAl(false); setMsg("✅ 전체 완료"); return; }
+      genAI(sts[idx].id, as2, function (text) {
+        results.push({ s: sts[idx], t: text });
+        setAb(results.slice());
+        idx++;
+        next();
+      });
+    }
+    next();
+  }
+
+  // 스타일
+  var cd = { background:"#fff", borderRadius:12, padding:20, marginBottom:14, boxShadow:"0 1px 8px rgba(0,0,0,0.06)" };
+  var ip = { padding:"9px 12px", border:"2px solid #e2e8f0", borderRadius:8, fontSize:14, boxSizing:"border-box", outline:"none" };
+  var sl = { padding:"9px 12px", border:"2px solid #e2e8f0", borderRadius:8, fontSize:14, background:"#fff" };
+  var ta2 = { padding:"9px 12px", border:"2px solid #e2e8f0", borderRadius:8, fontSize:14, boxSizing:"border-box", outline:"none", resize:"vertical", width:"100%", minHeight:60 };
+  var dlS = { background:"none", border:"none", color:"#ef4444", cursor:"pointer", fontSize:12, fontWeight:600 };
+  var blS = { background:"none", border:"none", color:"#3b82f6", cursor:"pointer", fontSize:12, fontWeight:600 };
+
+  function bt(bg) { return { padding:"9px 18px", background:bg, color:"#fff", border:"none", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer" }; }
+  function tg(bg) { return { display:"inline-block", padding:"2px 8px", borderRadius:5, fontSize:11, fontWeight:600, background:bg, color:"#fff", marginRight:4 }; }
+  function sbtn(a) { return { display:"block", width:"100%", padding:"11px 16px", border:"none", textAlign:"left", cursor:"pointer", fontSize:13, fontWeight:a?700:400, color:a?"#fbbf24":"#cbd5e1", background:a?"#334155":"transparent" }; }
+  function pk(a) { return { padding:"7px 16px", margin:"0 4px 4px 0", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:600, border:a?"2px solid #3b82f6":"2px solid #e2e8f0", background:a?"#eff6ff":"#fff" }; }
+
+  // ===== 렌더링 =====
+  var content = null;
+
+  if (page === "home") {
+    content = (
+      <div>
+        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>🧑‍🏫 교사 홈</h2>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:10 }}>
+          {[["class","🏫","반 관리"],["subject","📚","과목 관리"],["unit","📝","단원/기준"],["memo","✏️","단원별 메모"],["report","🤖","교과학습발달상황"]].map(function (m) {
+            return (
+              <button key={m[0]} onClick={function () { setPage(m[0]); }} style={{ padding:14, background:"#f8fafc", border:"2px solid #e2e8f0", borderRadius:12, cursor:"pointer", textAlign:"center" }}>
+                <div style={{ fontSize:26 }}>{m[1]}</div>
+                <div style={{ fontSize:13, fontWeight:600, marginTop:4 }}>{m[2]}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ ...cd, marginTop:16 }}>
+          <div style={{ fontSize:13, color:"#666" }}>💾 반 {CL.length} · 학생 {ST.length}명 · 과목 {SB.length} · 단원 {UN.length}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (page === "class") {
+    content = (
+      <div>
+        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>🏫 반 관리</h2>
+        <div style={cd}>
+          <div style={{ marginBottom:10 }}>
+            <span style={{ fontSize:13, fontWeight:600, marginRight:8 }}>학년</span>
+            {[1,2,3,4,5,6].map(function (n) {
+              return (<button key={n} onClick={function () { setGr(String(n)); }} style={pk(gr === String(n))}>{n}</button>);
+            })}
+          </div>
+          <div style={{ marginBottom:10 }}>
+            <span style={{ fontSize:13, fontWeight:600, marginRight:8 }}>반</span>
+            {[1,2,3,4,5,6,7,8,9,10].map(function (n) {
+              return (<button key={n} onClick={function () { setBn(String(n)); }} style={pk(bn === String(n))}>{n}</button>);
+            })}
+          </div>
+          {gr && bn && <div style={{ fontSize:14, marginBottom:8, fontWeight:600, color:"#3b82f6" }}>{gr}학년 {bn}반</div>}
+          <button onClick={addC} style={bt(gr && bn ? "#3b82f6" : "#cbd5e1")}>추가</button>
+        </div>
+        {CL.map(function (cl) {
+          var cs = ST.filter(function (x) { return x.ci === cl.id; }).sort(function (a, b) { return a.nu - b.nu; });
+          var f = gSF(cl.id);
+          return (
+            <div key={cl.id} style={cd}>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
+                <h3 style={{ fontSize:15, fontWeight:700 }}>{cl.n} ({cs.length}명)</h3>
+                <button style={dlS} onClick={function () { var n2=cl.n; var i2=cl.id; setDlg({ m:"'" + n2 + "' 반을 삭제하시겠습니까?", f:function () { delC(i2); } }); }}>반 삭제</button>
+              </div>
+              {cs.map(function (s) {
+                return (
+                  <div key={s.id} style={{ padding:"6px 0", borderBottom:"1px solid #f1f5f9" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span style={{ fontSize:14 }}><strong>{s.nu}번</strong> {s.na} {s.ch && <span style={{ fontSize:11, color:"#6366f1" }}>({s.ch.length > 15 ? s.ch.substring(0,15) + "..." : s.ch})</span>}</span>
+                      <div style={{ display:"flex", gap:6 }}>
+                        <button style={blS} onClick={function () { setEcId(s.id); setEcTx(s.ch || ""); }}>특성</button>
+                        <button style={dlS} onClick={function () { var n3=s.na; var i3=s.id; setDlg({ m:"'" + n3 + "' 학생을 삭제하시겠습니까?", f:function () { delS(i3); } }); }}>삭제</button>
+                      </div>
+                    </div>
+                    {ecId === s.id && (
+                      <div style={{ marginTop:8 }}>
+                        <textarea value={ecTx} onChange={function (e) { setEcTx(e.target.value); }} placeholder="학생 특성 (예: 소근육 약함, 집중시간 짧음)" style={ta2} />
+                        <div style={{ display:"flex", gap:6, marginTop:6 }}>
+                          <button onClick={saveCh} style={bt("#10b981")}>저장</button>
+                          <button onClick={function () { setEcId(null); }} style={bt("#94a3b8")}>취소</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div style={{ display:"flex", gap:6, marginTop:10 }}>
+                <input type="number" min="1" max="7" value={f.u} onChange={function (e) { sSF(cl.id, { n:f.n, u:e.target.value }); }} placeholder="번호" style={{ ...ip, width:65 }} />
+                <input value={f.n} onChange={function (e) { sSF(cl.id, { n:e.target.value, u:f.u }); }} placeholder="이름" style={{ ...ip, flex:1 }} onKeyDown={function (e) { if (e.key === "Enter") addS(cl.id); }} />
+                <button onClick={function () { addS(cl.id); }} style={bt("#10b981")}>추가</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (page === "subject") {
+    content = (
+      <div>
+        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>📚 과목 관리</h2>
+        <div style={cd}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <select value={sc} onChange={function (e) { setSc(e.target.value); }} style={sl}>
+              <option value="">담당 반</option>
+              {CL.map(function (x) { return (<option key={x.id} value={x.id}>{x.n}</option>); })}
+            </select>
+            <input value={ns} onChange={function (e) { setNs(e.target.value); }} placeholder="과목명" style={{ ...ip, flex:1 }} onKeyDown={function (e) { if (e.key === "Enter") addSB2(); }} />
+            <button onClick={addSB2} style={bt("#3b82f6")}>추가</button>
+          </div>
+        </div>
+        {SB.map(function (x) {
+          var cl2 = CL.find(function (y) { return y.id === x.ci; });
+          return (
+            <div key={x.id} style={{ ...cd, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div><span style={{ fontWeight:600 }}>{x.na}</span> {cl2 && <span style={tg("#6366f1")}>{cl2.n}</span>}</div>
+              <button style={dlS} onClick={function () { var n4=x.na; var i4=x.id; setDlg({ m:"'" + n4 + "' 과목을 삭제하시겠습니까?", f:function () { delSB2(i4); } }); }}>삭제</button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (page === "unit") {
+    var fu = ss ? UN.filter(function (x) { return x.bi === ss; }).sort(function (a, b) { return a.or - b.or; }) : [];
+    content = (
+      <div>
+        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>📝 단원 / 평가기준</h2>
+        <div style={cd}>
+          <select value={ss} onChange={function (e) { setSs(e.target.value); setEru(""); }} style={{ ...sl, width:"100%" }}>
+            <option value="">과목 선택</option>
+            {SB.map(function (x) { var cl2 = CL.find(function (y) { return y.id === x.ci; }); return (<option key={x.id} value={x.id}>{x.na} ({cl2 ? cl2.n : ""})</option>); })}
+          </select>
+        </div>
+        {ss && (
+          <div style={cd}>
+            <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+              <input value={nu} onChange={function (e) { setNu(e.target.value); }} placeholder="단원명" style={{ ...ip, flex:1 }} onKeyDown={function (e) { if (e.key === "Enter") addU(); }} />
+              <button onClick={addU} style={bt("#3b82f6")}>추가</button>
+            </div>
+            {fu.map(function (u) {
+              var rb = RB.find(function (x) { return x.ui === u.id; });
+              var has = rb && (rb.h || rb.m || rb.l);
+              return (
+                <div key={u.id} style={{ padding:8, borderRadius:8, marginTop:6, background:eru === u.id ? "#eff6ff" : "#f8fafc", border:eru === u.id ? "2px solid #3b82f6" : "2px solid transparent" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span style={{ fontSize:13, fontWeight:600, cursor:"pointer" }} onClick={function () { ldRB(u.id); }}>{u.or}. {u.na} {has ? <span style={tg("#10b981")}>✓</span> : <span style={tg("#f59e0b")}>✗</span>}</span>
+                    <div style={{ display:"flex", gap:6 }}>
+                      <button style={blS} onClick={function () { ldRB(u.id); }}>편집</button>
+                      <button style={dlS} onClick={function (e) { e.stopPropagation(); var n5=u.na; var i5=u.id; setDlg({ m:"'" + n5 + "' 단원을 삭제하시겠습니까?", f:function () { delU(i5); } }); }}>삭제</button>
+                    </div>
+                  </div>
+                  {eru === u.id && (
+                    <div style={{ marginTop:10, padding:12, background:"#fff", borderRadius:8, border:"1px solid #e2e8f0" }}>
+                      <div style={{ marginBottom:8 }}><label style={{ fontSize:13, fontWeight:600, color:"#10b981" }}>🟢 상</label><textarea value={rh} onChange={function (e) { setRh(e.target.value); }} style={{ ...ta2, minHeight:40, marginTop:4 }} /></div>
+                      <div style={{ marginBottom:8 }}><label style={{ fontSize:13, fontWeight:600, color:"#f59e0b" }}>🟡 중</label><textarea value={rm} onChange={function (e) { setRm(e.target.value); }} style={{ ...ta2, minHeight:40, marginTop:4 }} /></div>
+                      <div style={{ marginBottom:8 }}><label style={{ fontSize:13, fontWeight:600, color:"#ef4444" }}>🔴 하</label><textarea value={rl} onChange={function (e) { setRl(e.target.value); }} style={{ ...ta2, minHeight:40, marginTop:4 }} /></div>
+                      <button onClick={saveRB2} style={bt("#10b981")}>저장</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (page === "memo") {
+    var mSub = ms ? SB.find(function (x) { return x.id === ms; }) : null;
+    var mUn = mSub ? UN.filter(function (x) { return x.bi === ms; }).sort(function (a, b) { return a.or - b.or; }) : [];
+    var mSts = mSub ? ST.filter(function (x) { return x.ci === mSub.ci; }).sort(function (a, b) { return a.nu - b.nu; }) : [];
+    var mStu = mt2 ? ST.find(function (x) { return x.id === mt2; }) : null;
+
+    content = (
+      <div>
+        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>✏️ 단원별 학생 메모</h2>
+        <div style={cd}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <select value={ms} onChange={function (e) { setMs(e.target.value); setMt2(""); setMx({}); setMlv({}); }} style={sl}>
+              <option value="">과목</option>
+              {SB.map(function (x) { var cl2 = CL.find(function (y) { return y.id === x.ci; }); return (<option key={x.id} value={x.id}>{x.na} ({cl2 ? cl2.n : ""})</option>); })}
+            </select>
+            {ms && (
+              <select value={mt2} onChange={function (e) { var sid = e.target.value; setMt2(sid); if (sid) { ldMemos(sid, mUn); } else { setMx({}); setMlv({}); } }} style={sl}>
+                <option value="">학생</option>
+                {mSts.map(function (x) { return (<option key={x.id} value={x.id}>{x.nu}번 {x.na}</option>); })}
+              </select>
+            )}
+          </div>
+        </div>
+        {mStu && mUn.length > 0 && (
+          <div style={cd}>
+            <h3 style={{ fontSize:15, fontWeight:600, marginBottom:4 }}>{mStu.nu}번 {mStu.na}</h3>
+            {mStu.ch && <p style={{ fontSize:12, color:"#6366f1", marginBottom:12 }}>특성: {mStu.ch}</p>}
+            {mUn.map(function (u) {
+              var rb = RB.find(function (x) { return x.ui === u.id; });
+              var tx = mx[u.id] !== undefined ? mx[u.id] : "";
+              var lv = mlv[u.id] || "";
+              var unitId = u.id; var stuId = mt2;
+              return (
+                <div key={u.id} style={{ marginBottom:14, padding:12, background:"#f8fafc", borderRadius:8 }}>
+                  <div style={{ fontSize:13, fontWeight:600, marginBottom:6 }}>{u.or}. {u.na}</div>
+                  {rb && (
+                    <div style={{ fontSize:11, color:"#666", marginBottom:6, padding:6, background:"#fff", borderRadius:6, border:"1px solid #e2e8f0" }}>
+                      <span style={{ color:"#10b981" }}>상: {rb.h}</span><br />
+                      <span style={{ color:"#f59e0b" }}>중: {rb.m}</span><br />
+                      <span style={{ color:"#ef4444" }}>하: {rb.l}</span>
+                    </div>
+                  )}
+                  <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+                    <div style={{ display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}>
+                      <span style={{ fontSize:12, fontWeight:600, marginBottom:2 }}>도달수준</span>
+                      {[["h","상","#10b981"],["m","중","#f59e0b"],["l","하","#ef4444"]].map(function (lv2) {
+                        var isA = lv === lv2[0];
+                        return (
+                          <button key={lv2[0]} onClick={function () { var v = lv2[0]; setMlv(function (p) { var o = Object.assign({}, p); o[unitId] = v; return o; }); }}
+                            style={{ padding:"6px 16px", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:700,
+                              border:isA ? "3px solid " + lv2[2] : "2px solid #e2e8f0",
+                              background:isA ? lv2[2] : "#fff",
+                              color:isA ? "#fff" : lv2[2] }}>
+                            {lv2[1]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <span style={{ fontSize:12, fontWeight:600, marginBottom:2, display:"block" }}>메모 (구어체 OK)</span>
+                      <textarea value={tx} onChange={function (e) { var uid3 = unitId; setMx(function (p) { var o = Object.assign({}, p); o[uid3] = e.target.value; return o; }); }} placeholder="예: 5까지는 셈, 받아올림 아직 못함" style={ta2} />
+                    </div>
+                  </div>
+                  <button onClick={function () { saveMemo1(stuId, unitId); }} style={{ ...bt("#10b981"), marginTop:8, fontSize:12, padding:"6px 14px" }}>저장</button>
+                </div>
+              );
+            })}
+            <button onClick={function () { saveMemoAll(mt2); }} style={{ ...bt("#3b82f6"), marginTop:4 }}>📝 전체 일괄 저장</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (page === "report") {
+    var rSub = as2 ? SB.find(function (x) { return x.id === as2; }) : null;
+    var rSts = rSub ? ST.filter(function (x) { return x.ci === rSub.ci; }).sort(function (a, b) { return a.nu - b.nu; }) : [];
+    content = (
+      <div>
+        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>🤖 교과학습발달상황 생성</h2>
+        <div style={cd}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
+            <select value={as2} onChange={function (e) { setAs2(e.target.value); setAt2(""); setAr(""); setAb([]); }} style={sl}>
+              <option value="">과목</option>
+              {SB.map(function (x) { var cl2 = CL.find(function (y) { return y.id === x.ci; }); return (<option key={x.id} value={x.id}>{x.na} ({cl2 ? cl2.n : ""})</option>); })}
+            </select>
+            {as2 && (
+              <select value={at2} onChange={function (e) { setAt2(e.target.value); setAr(""); }} style={sl}>
+                <option value="">학생(개별)</option>
+                {rSts.map(function (x) { return (<option key={x.id} value={x.id}>{x.nu}번 {x.na}</option>); })}
+              </select>
+            )}
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={gen1} disabled={al || !at2} style={bt(at2 && !al ? "#3b82f6" : "#cbd5e1")}>{al ? "⏳ 생성 중..." : "📝 개별 생성"}</button>
+            <button onClick={genAll} disabled={al || !as2} style={bt(as2 && !al ? "#8b5cf6" : "#cbd5e1")}>{al ? "⏳ 생성 중..." : "📋 전체 일괄"}</button>
+          </div>
+        </div>
+        {ar && (
+          <div style={cd}>
+            <h3 style={{ fontSize:15, fontWeight:600, marginBottom:10 }}>📝 결과</h3>
+            <textarea value={ar} onChange={function (e) { setAr(e.target.value); }} style={{ ...ta2, minHeight:120 }} />
+            <div style={{ display:"flex", gap:8, marginTop:10 }}>
+              <button onClick={function () { navigator.clipboard.writeText(ar); setMsg("📋 복사 완료"); }} style={bt("#10b981")}>복사</button>
+              <button onClick={gen1} style={bt("#f59e0b")}>재생성</button>
+            </div>
+          </div>
+        )}
+        {ab.length > 0 && (
+          <div>
+            <h3 style={{ fontSize:16, fontWeight:700, margin:"10px 0" }}>📋 전체 결과 ({ab.length}명)</h3>
+            {ab.map(function (x, i) {
+              return (
+                <div key={i} style={cd}>
+                  <div style={{ fontSize:14, fontWeight:700, marginBottom:8 }}>{x.s.nu}번 {x.s.na}</div>
+                  <textarea defaultValue={x.t} style={{ ...ta2, minHeight:100 }} />
+                  <button onClick={function () { navigator.clipboard.writeText(x.t); setMsg("📋 복사"); }} style={{ ...bt("#10b981"), marginTop:6 }}>복사</button>
+                </div>
+              );
+            })}
+            <button onClick={function () { var all2 = ab.map(function (x) { return x.s.nu + "번 " + x.s.na + "\n" + x.t; }).join("\n\n---\n\n"); navigator.clipboard.writeText(all2); setMsg("📋 전체 복사"); }} style={bt("#8b5cf6")}>전체 복사</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#f0f4f8", fontFamily:"-apple-system,sans-serif" }}>
+      <header style={{ background:"#1e40af", color:"#fff", padding:"12px 20px" }}>
+        <span style={{ fontSize:26 }}>📋</span>
+        <span style={{ fontSize:17, fontWeight:700, marginLeft:8 }}>과정중심평가 관리</span>
+      </header>
+      <div style={{ display:"flex", minHeight:"calc(100vh - 52px)" }}>
+        <nav style={{ width:180, background:"#1e293b", padding:"12px 0", flexShrink:0 }}>
+          {[["home","🏠","홈"],["class","🏫","반 관리"],["subject","📚","과목 관리"],["unit","📝","단원/기준"],["memo","✏️","단원별 메모"],["report","🤖","교과학습발달상황"]].map(function (m) {
+            return (
+              <button key={m[0]} onClick={function () { setPage(m[0]); }} style={sbtn(page === m[0])}>{m[1]} {m[2]}</button>
+            );
+          })}
+        </nav>
+        <div style={{ flex:1, padding:20, maxWidth:900, overflowY:"auto" }}>
+          {content}
+        </div>
+      </div>
+      {dlg && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999 }}>
+          <div style={{ background:"#fff", borderRadius:16, padding:32, width:340, textAlign:"center" }}>
+            <div style={{ fontSize:36, marginBottom:12 }}>⚠️</div>
+            <p style={{ fontSize:15, fontWeight:600, marginBottom:20 }}>{dlg.m}</p>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={function () { setDlg(null); }} style={{ flex:1, padding:12, background:"#e2e8f0", border:"none", borderRadius:8, fontSize:14, fontWeight:600, cursor:"pointer" }}>취소</button>
+              <button onClick={function () { if (dlg.f) dlg.f(); setDlg(null); }} style={{ flex:1, padding:12, background:"#ef4444", color:"#fff", border:"none", borderRadius:8, fontSize:14, fontWeight:600, cursor:"pointer" }}>삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {msg && <Toast msg={msg} done={function () { setMsg(""); }} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
