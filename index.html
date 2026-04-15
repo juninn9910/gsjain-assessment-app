@@ -3,618 +3,1314 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>과정중심평가 관리</title>
+<title>경산자인학교 과정중심평가 관리</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f0f4f8; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg1: #fdf2f8; --bg2: #fff1f2; --bg3: #fce7f3;
+  --card-bg: rgba(255,255,255,0.65);
+  --card-border: rgba(236,72,153,0.15);
+  --header-bg: rgba(255,255,255,0.7);
+  --sidebar-bg: rgba(253,242,248,0.85);
+  --pink: #ec4899; --pink-light: #f472b6;
+  --lavender: #c084fc; --mint: #34d399;
+  --red: #fb7185; --amber: #fbbf24;
+  --text-dark: #881337; --text-sub: rgba(157,23,77,0.5);
+  --shadow: 0 8px 32px rgba(236,72,153,0.08);
+  --radius: 16px; --radius-sm: 12px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg3) 100%);
+  min-height: 100vh; color: var(--text-dark);
+  overflow-x: hidden;
+}
+
+.glass {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.glass-strong {
+  background: rgba(255,255,255,0.8);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* Header */
+.app-header {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: 60px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px;
+  background: var(--header-bg);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--card-border);
+  box-shadow: 0 4px 20px rgba(236,72,153,0.06);
+}
+.app-header .logo { font-size: 18px; font-weight: 700; color: var(--text-dark); }
+.app-header .logo span { color: var(--pink); }
+.app-header .teacher-info { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+
+/* Sidebar */
+.sidebar {
+  position: fixed; top: 60px; left: 0; bottom: 0; width: 220px; z-index: 90;
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-right: 1px solid var(--card-border);
+  padding: 16px 12px; display: flex; flex-direction: column; gap: 4px;
+  overflow-y: auto;
+}
+.sidebar-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-radius: var(--radius-sm);
+  font-size: 15px; font-weight: 500; cursor: pointer;
+  transition: all 0.2s ease; border: none; background: transparent;
+  color: var(--text-dark); text-align: left; width: 100%;
+}
+.sidebar-item:hover { background: rgba(236,72,153,0.08); }
+.sidebar-item.active {
+  background: linear-gradient(135deg, var(--pink), var(--pink-light));
+  color: white; box-shadow: 0 4px 16px rgba(236,72,153,0.25);
+}
+
+/* Main */
+.main { margin-left: 220px; margin-top: 60px; padding: 24px; min-height: calc(100vh - 60px); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 20px; border-radius: var(--radius-sm); border: none;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-pink {
+  background: linear-gradient(135deg, var(--pink), var(--pink-light));
+  color: white; box-shadow: 0 4px 16px rgba(236,72,153,0.2);
+}
+.btn-pink:hover { box-shadow: 0 4px 20px rgba(236,72,153,0.35); transform: translateY(-1px); }
+.btn-mint { background: var(--mint); color: white; }
+.btn-mint:hover { box-shadow: 0 4px 16px rgba(52,211,153,0.3); }
+.btn-lavender { background: var(--lavender); color: white; }
+.btn-lavender:hover { box-shadow: 0 4px 16px rgba(192,132,252,0.3); }
+.btn-red { background: var(--red); color: white; }
+.btn-red:hover { box-shadow: 0 4px 16px rgba(251,113,133,0.3); }
+.btn-ghost {
+  background: rgba(255,255,255,0.5); color: var(--text-dark);
+  border: 1px solid var(--card-border);
+}
+.btn-ghost:hover { background: rgba(255,255,255,0.8); }
+.btn-sm { padding: 6px 14px; font-size: 13px; }
+
+/* Inputs */
+input[type="text"], input[type="number"], textarea, select {
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--card-border);
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font-size: 14px; color: var(--text-dark);
+  transition: all 0.2s ease; width: 100%;
+  font-family: inherit;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none; border-color: var(--pink);
+  box-shadow: 0 0 0 3px rgba(236,72,153,0.1);
+}
+textarea { resize: vertical; min-height: 80px; }
+select { cursor: pointer; }
+
+/* Tags */
+.tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: rgba(236,72,153,0.1);
+  backdrop-filter: blur(8px); color: var(--pink);
+}
+.tag-mint { background: rgba(52,211,153,0.12); color: #059669; }
+.tag-red { background: rgba(251,113,133,0.12); color: #e11d48; }
+.tag-amber { background: rgba(251,191,36,0.12); color: #d97706; }
+
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 200;
+  background: rgba(136,19,55,0.15);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 32px;
+  box-shadow: 0 16px 48px rgba(236,72,153,0.12);
+  max-width: 400px; width: 90%; text-align: center;
+}
+.modal-box h3 { margin-bottom: 12px; font-size: 18px; }
+.modal-box p { margin-bottom: 24px; color: var(--text-sub); font-size: 14px; }
+.modal-actions { display: flex; gap: 12px; justify-content: center; }
+
+/* Toast */
+.toast-container {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 300;
+  display: flex; flex-direction: column; gap: 8px; align-items: center;
+}
+.toast {
+  padding: 12px 24px; border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 8px 32px rgba(236,72,153,0.12);
+  font-size: 14px; font-weight: 500; color: var(--text-dark);
+  animation: toastIn 0.3s ease, toastOut 0.3s ease 1.7s forwards;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+
+/* Teacher Select Screen */
+.teacher-select-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 40px 20px;
+}
+.teacher-select-box {
+  max-width: 480px; width: 100%; padding: 40px; text-align: center;
+}
+.teacher-select-box h1 { font-size: 28px; margin-bottom: 8px; }
+.teacher-select-box h1 span { color: var(--pink); }
+.teacher-select-box .sub { color: var(--text-sub); margin-bottom: 32px; font-size: 15px; }
+.teacher-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 32px; }
+.teacher-btn {
+  padding: 16px 28px; border-radius: var(--radius-sm); border: 2px solid var(--card-border);
+  background: rgba(255,255,255,0.6); font-size: 16px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s ease; color: var(--text-dark);
+}
+.teacher-btn:hover {
+  border-color: var(--pink); background: rgba(236,72,153,0.05);
+  box-shadow: 0 4px 16px rgba(236,72,153,0.15);
+}
+.teacher-add { display: flex; gap: 8px; margin-top: 8px; }
+
+/* Grid cards for home */
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.home-card {
+  padding: 28px 20px; text-align: center; cursor: pointer;
+  transition: all 0.2s ease; border: none;
+  font-family: inherit; color: var(--text-dark);
+}
+.home-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(236,72,153,0.12); }
+.home-card .emoji { font-size: 36px; margin-bottom: 12px; }
+.home-card .label { font-size: 15px; font-weight: 600; }
+
+/* Section title */
+.section-title { font-size: 22px; font-weight: 700; margin-bottom: 20px; }
+.section-title .emoji { margin-right: 8px; }
+
+/* Grade/Class buttons */
+.num-btn-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.num-btn {
+  width: 48px; height: 48px; border-radius: var(--radius-sm);
+  border: 2px solid var(--card-border); background: rgba(255,255,255,0.5);
+  font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s ease;
+  color: var(--text-dark); display: flex; align-items: center; justify-content: center;
+}
+.num-btn:hover { border-color: var(--pink); }
+.num-btn.active {
+  border-color: var(--pink); background: linear-gradient(135deg, var(--pink), var(--pink-light));
+  color: white; box-shadow: 0 4px 16px rgba(236,72,153,0.25);
+}
+
+/* Level buttons */
+.level-btn-group { display: flex; flex-direction: column; gap: 8px; }
+.level-btn {
+  padding: 10px 16px; border-radius: var(--radius-sm); border: 2px solid transparent;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s ease;
+  background: rgba(255,255,255,0.5);
+}
+.level-btn.h { border-color: rgba(52,211,153,0.3); color: #059669; }
+.level-btn.h.active { background: var(--mint); color: white; box-shadow: 0 4px 16px rgba(52,211,153,0.3); }
+.level-btn.m { border-color: rgba(251,191,36,0.3); color: #d97706; }
+.level-btn.m.active { background: var(--amber); color: white; box-shadow: 0 4px 16px rgba(251,191,36,0.3); }
+.level-btn.l { border-color: rgba(251,113,133,0.3); color: #e11d48; }
+.level-btn.l.active { background: var(--red); color: white; box-shadow: 0 4px 16px rgba(251,113,133,0.3); }
+
+/* Card list */
+.card-list { display: flex; flex-direction: column; gap: 12px; }
+.card-item { padding: 16px 20px; }
+.card-item .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-item .card-title { font-size: 16px; font-weight: 600; }
+
+/* Unit memo layout */
+.memo-unit-card { padding: 20px; margin-bottom: 16px; }
+.memo-unit-inner { display: flex; gap: 16px; align-items: flex-start; }
+.memo-unit-left { flex-shrink: 0; width: 80px; }
+.memo-unit-right { flex: 1; }
+
+/* Rubric display */
+.rubric-preview {
+  padding: 12px; border-radius: var(--radius-sm); margin-top: 12px;
+  background: rgba(255,255,255,0.4); font-size: 12px; color: var(--text-sub);
+}
+.rubric-preview .rp-row { margin-bottom: 4px; }
+.rubric-preview .rp-label { font-weight: 700; }
+
+/* AI result cards */
+.ai-result-card { padding: 20px; margin-bottom: 16px; }
+.ai-result-card textarea {
+  width: 100%; min-height: 120px; margin: 12px 0;
+  background: rgba(255,255,255,0.5); border: 1px solid var(--card-border);
+}
+
+/* Spinner */
+.spinner {
+  display: inline-block; width: 20px; height: 20px;
+  border: 3px solid rgba(236,72,153,0.2); border-top-color: var(--pink);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { width: 180px; }
+  .main { margin-left: 180px; }
+}
+@media (max-width: 600px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(236,72,153,0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(236,72,153,0.3); }
+
+/* Inline flex helpers */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.flex-1 { flex: 1; }
+.mb-8 { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-24 { margin-bottom: 24px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.w-full { width: 100%; }
+.text-center { text-align: center; }
+.text-sm { font-size: 13px; }
+.text-sub { color: var(--text-sub); }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect } = React;
+/* ============================
+   CONFIG
+   ============================ */
+var API_ENDPOINT = "https://pca-proxy.juninn9910.workers.dev";
+var AI_MODEL = "claude-sonnet-4-20250514";
 
-const K = "pca_";
+/* ============================
+   UTILS
+   ============================ */
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+}
 
-function dbLoad(t) {
+function loadJSON(key, fallback) {
   try {
-    var d = localStorage.getItem(K + t);
-    return d ? JSON.parse(d) : [];
-  } catch (e) { return []; }
+    var d = localStorage.getItem(key);
+    return d ? JSON.parse(d) : fallback;
+  } catch(e) { return fallback; }
 }
 
-function dbSave(t, d) {
-  try { localStorage.setItem(K + t, JSON.stringify(d)); } catch (e) {}
+function saveJSON(key, data) {
+  localStorage.setItem(key, JSON.stringify(data));
 }
 
-function uid() { return crypto.randomUUID(); }
+/* ============================
+   APP
+   ============================ */
+var useState = React.useState;
+var useEffect = React.useEffect;
+var useCallback = React.useCallback;
+var useRef = React.useRef;
 
-function Toast(props) {
-  useEffect(function () {
-    var t = setTimeout(props.done, 2000);
-    return function () { clearTimeout(t); };
-  }, []);
+function App() {
+  var _ts = useState(function() { return loadJSON("pca_teachers", []); });
+  var teachers = _ts[0], setTeachers = _ts[1];
+  var _tid = useState(null);
+  var teacherId = _tid[0], setTeacherId = _tid[1];
+  var _page = useState("home");
+  var page = _page[0], setPage = _page[1];
+  var _toast = useState([]);
+  var toasts = _toast[0], setToasts = _toast[1];
+  var _modal = useState(null);
+  var modal = _modal[0], setModal = _modal[1];
+
+  function toast(msg) {
+    var id = uid();
+    setToasts(function(prev) { return prev.concat([{id: id, msg: msg}]); });
+    setTimeout(function() {
+      setToasts(function(prev) { return prev.filter(function(t) { return t.id !== id; }); });
+    }, 2000);
+  }
+
+  function saveTeachers(t) {
+    setTeachers(t);
+    saveJSON("pca_teachers", t);
+  }
+
+  /* Data helpers with teacher prefix */
+  function tKey(suffix) { return "pca_" + teacherId + "_" + suffix; }
+  function loadT(suffix) { return loadJSON(tKey(suffix), []); }
+  function saveT(suffix, data) { saveJSON(tKey(suffix), data); }
+
+  var teacher = teachers.find(function(t) { return t.id === teacherId; });
+
+  if (!teacherId) {
+    return (
+      <React.Fragment>
+        <TeacherSelect teachers={teachers} saveTeachers={saveTeachers} onSelect={setTeacherId} toast={toast} />
+        <ToastContainer toasts={toasts} />
+      </React.Fragment>
+    );
+  }
+
+  var menus = [
+    {key:"home", icon:"🏠", label:"홈"},
+    {key:"class", icon:"🏫", label:"반 관리"},
+    {key:"subject", icon:"📚", label:"과목 관리"},
+    {key:"unit", icon:"📝", label:"단원/평가기준"},
+    {key:"memo", icon:"✏️", label:"단원별 메모"},
+    {key:"ai", icon:"🤖", label:"교과학습발달상황"}
+  ];
+
   return (
-    <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", background:"#1e293b", color:"#fff", padding:"10px 24px", borderRadius:10, fontSize:14, fontWeight:600, zIndex:9999, boxShadow:"0 4px 20px rgba(0,0,0,0.25)" }}>
-      {props.msg}
+    <React.Fragment>
+      <header className="app-header">
+        <div className="logo">📋 <span>경산자인학교</span> · 과정중심평가 관리</div>
+        <div className="teacher-info">
+          <span>{teacher ? teacher.name : ""} 선생님</span>
+          <button className="btn btn-ghost btn-sm" onClick={function() { setTeacherId(null); setPage("home"); }}>교사 변경</button>
+        </div>
+      </header>
+      <nav className="sidebar">
+        {menus.map(function(m) {
+          return (
+            <button key={m.key} className={"sidebar-item" + (page === m.key ? " active" : "")} onClick={function() { setPage(m.key); }}>
+              <span>{m.icon}</span><span>{m.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+      <div className="main">
+        {page === "home" && <PageHome setPage={setPage} loadT={loadT} />}
+        {page === "class" && <PageClass loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
+        {page === "subject" && <PageSubject loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
+        {page === "unit" && <PageUnit loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
+        {page === "memo" && <PageMemo loadT={loadT} saveT={saveT} toast={toast} />}
+        {page === "ai" && <PageAI loadT={loadT} saveT={saveT} toast={toast} />}
+      </div>
+      {modal && <Modal modal={modal} setModal={setModal} />}
+      <ToastContainer toasts={toasts} />
+    </React.Fragment>
+  );
+}
+
+/* ============================
+   TEACHER SELECT
+   ============================ */
+function TeacherSelect(props) {
+  var _n = useState("");
+  var name = _n[0], setName = _n[1];
+
+  function addTeacher() {
+    var n = name.trim();
+    if (!n) return;
+    if (props.teachers.some(function(t) { return t.name === n; })) {
+      props.toast("이미 등록된 교사입니다");
+      return;
+    }
+    var nw = props.teachers.concat([{id: uid(), name: n}]);
+    props.saveTeachers(nw);
+    setName("");
+    props.toast(n + " 선생님 등록 완료");
+  }
+
+  return (
+    <div className="teacher-select-screen">
+      <div className="teacher-select-box glass-strong">
+        <h1>📋 <span>경산자인학교</span></h1>
+        <p className="sub">과정중심평가 관리 시스템</p>
+        <p className="mb-16" style={{fontWeight:600, fontSize:15}}>교사를 선택하세요</p>
+        <div className="teacher-grid">
+          {props.teachers.map(function(t) {
+            return (
+              <button key={t.id} className="teacher-btn" onClick={function() { props.onSelect(t.id); }}>
+                {t.name}
+              </button>
+            );
+          })}
+          {props.teachers.length === 0 && <p className="text-sub text-sm">등록된 교사가 없습니다</p>}
+        </div>
+        <div className="teacher-add">
+          <input type="text" placeholder="새 교사 이름" value={name} onChange={function(e) { setName(e.target.value); }}
+            onKeyDown={function(e) { if (e.key === "Enter") addTeacher(); }}
+            style={{flex:1}} />
+          <button className="btn btn-pink" onClick={addTeacher}>등록</button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function App() {
-  var [msg, setMsg] = useState("");
-  var [page, setPage] = useState("home");
-  var [dlg, setDlg] = useState(null);
+/* ============================
+   MODAL
+   ============================ */
+function Modal(props) {
+  var m = props.modal;
+  return (
+    <div className="modal-overlay" onClick={function() { props.setModal(null); }}>
+      <div className="modal-box" onClick={function(e) { e.stopPropagation(); }}>
+        <h3>⚠️ {m.title || "삭제 확인"}</h3>
+        <p>{m.msg || "정말 삭제하시겠습니까?"}</p>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={function() { props.setModal(null); }}>취소</button>
+          <button className="btn btn-red" onClick={function() { m.onConfirm(); props.setModal(null); }}>삭제</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  var [CL, setCL] = useState(function () { return dbLoad("c"); });
-  var [ST, setST] = useState(function () { return dbLoad("s"); });
-  var [SB, setSB] = useState(function () { return dbLoad("b"); });
-  var [UN, setUN] = useState(function () { return dbLoad("u"); });
-  var [RB, setRB] = useState(function () { return dbLoad("r"); });
-  var [ME, setME] = useState(function () { return dbLoad("m"); });
+/* ============================
+   TOAST
+   ============================ */
+function ToastContainer(props) {
+  if (props.toasts.length === 0) return null;
+  return (
+    <div className="toast-container">
+      {props.toasts.map(function(t) {
+        return <div key={t.id} className="toast">{t.msg}</div>;
+      })}
+    </div>
+  );
+}
 
-  var [gr, setGr] = useState("");
-  var [bn, setBn] = useState("");
-  var [sf, setSf] = useState({});
-  var [ns, setNs] = useState("");
-  var [sc, setSc] = useState("");
-  var [ss, setSs] = useState("");
-  var [nu, setNu] = useState("");
-  var [ecId, setEcId] = useState(null);
-  var [ecTx, setEcTx] = useState("");
-  var [eru, setEru] = useState("");
-  var [rh, setRh] = useState("");
-  var [rm, setRm] = useState("");
-  var [rl, setRl] = useState("");
-  var [ms, setMs] = useState("");
-  var [mt2, setMt2] = useState("");
-  var [mx, setMx] = useState({});
-  var [mlv, setMlv] = useState({});
-  var [as2, setAs2] = useState("");
-  var [at2, setAt2] = useState("");
-  var [ar, setAr] = useState("");
-  var [al, setAl] = useState(false);
-  var [ab, setAb] = useState([]);
+/* ============================
+   HOME
+   ============================ */
+function PageHome(props) {
+  var classes = props.loadT("c");
+  var students = props.loadT("s");
+  var subjects = props.loadT("b");
+  var units = props.loadT("u");
 
-  function R() {
-    setCL(dbLoad("c")); setST(dbLoad("s")); setSB(dbLoad("b"));
-    setUN(dbLoad("u")); setRB(dbLoad("r")); setME(dbLoad("m"));
+  var cards = [
+    {key:"class", icon:"🏫", label:"반 관리"},
+    {key:"subject", icon:"📚", label:"과목 관리"},
+    {key:"unit", icon:"📝", label:"단원/평가기준"},
+    {key:"memo", icon:"✏️", label:"단원별 메모"},
+    {key:"ai", icon:"🤖", label:"교과학습발달상황"}
+  ];
+
+  return (
+    <div>
+      <div className="home-grid">
+        {cards.map(function(c) {
+          return (
+            <button key={c.key} className="home-card glass" onClick={function() { props.setPage(c.key); }}>
+              <div className="emoji">{c.icon}</div>
+              <div className="label">{c.label}</div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="glass" style={{padding:20, textAlign:"center"}}>
+        <span className="tag" style={{margin:"0 4px"}}>반 {classes.length}개</span>
+        <span className="tag" style={{margin:"0 4px"}}>학생 {students.length}명</span>
+        <span className="tag" style={{margin:"0 4px"}}>과목 {subjects.length}개</span>
+        <span className="tag" style={{margin:"0 4px"}}>단원 {units.length}개</span>
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   CLASS MANAGEMENT
+   ============================ */
+function PageClass(props) {
+  var _cls = useState(function() { return props.loadT("c"); });
+  var classes = _cls[0], setClasses = _cls[1];
+  var _stu = useState(function() { return props.loadT("s"); });
+  var students = _stu[0], setStudents = _stu[1];
+  var _grade = useState(null);
+  var grade = _grade[0], setGrade = _grade[1];
+  var _cnum = useState(null);
+  var cnum = _cnum[0], setCnum = _cnum[1];
+  var _sname = useState("");
+  var sname = _sname[0], setSname = _sname[1];
+  var _snum = useState("");
+  var snum = _snum[0], setSnum = _snum[1];
+  var _editChar = useState(null);
+  var editChar = _editChar[0], setEditChar = _editChar[1];
+  var _charText = useState("");
+  var charText = _charText[0], setCharText = _charText[1];
+
+  function refreshClasses() { var d = props.loadT("c"); setClasses(d); return d; }
+  function refreshStudents() { var d = props.loadT("s"); setStudents(d); return d; }
+
+  function addClass() {
+    if (!grade || !cnum) { props.toast("학년과 반을 선택하세요"); return; }
+    var n = grade + "학년 " + cnum + "반";
+    if (classes.some(function(c) { return c.n === n; })) { props.toast("이미 등록된 반입니다"); return; }
+    var nw = classes.concat([{id: uid(), n: n}]);
+    props.saveT("c", nw);
+    setClasses(nw);
+    setGrade(null); setCnum(null);
+    props.toast(n + " 추가 완료");
   }
 
-  function getMM(si, ui2) {
-    var arr = dbLoad("m");
-    var m = arr.find(function (x) { return x.si === si && x.ui === ui2; });
-    return m ? (m.tx || "") : "";
+  function deleteClass(cid) {
+    props.setModal({
+      msg: "반을 삭제하면 소속 학생·과목·단원이 모두 삭제됩니다.",
+      onConfirm: function() {
+        var nc = classes.filter(function(c) { return c.id !== cid; });
+        props.saveT("c", nc); setClasses(nc);
+        /* cascade */
+        var ns = students.filter(function(s) { return s.ci !== cid; });
+        props.saveT("s", ns); setStudents(ns);
+        var subjects = props.loadT("b");
+        var delSubIds = subjects.filter(function(b) { return b.ci === cid; }).map(function(b) { return b.id; });
+        props.saveT("b", subjects.filter(function(b) { return b.ci !== cid; }));
+        var units = props.loadT("u");
+        var delUnitIds = units.filter(function(u) { return delSubIds.indexOf(u.bi) >= 0; }).map(function(u) { return u.id; });
+        props.saveT("u", units.filter(function(u) { return delSubIds.indexOf(u.bi) < 0; }));
+        var rubrics = props.loadT("r");
+        props.saveT("r", rubrics.filter(function(r) { return delUnitIds.indexOf(r.ui) < 0; }));
+        var memos = props.loadT("m");
+        props.saveT("m", memos.filter(function(m) { return delUnitIds.indexOf(m.ui) < 0; }));
+        props.toast("삭제 완료");
+      }
+    });
   }
 
-  function getMMLv(si, ui2) {
-    var arr = dbLoad("m");
-    var m = arr.find(function (x) { return x.si === si && x.ui === ui2; });
-    return m ? (m.lv || "") : "";
-  }
-
-  // CRUD
-  function addC() {
-    if (!gr || !bn) { setMsg("학년과 반을 선택하세요"); return; }
-    var nm = gr + "학년 " + bn + "반";
-    var arr = dbLoad("c");
-    if (arr.find(function (x) { return x.n === nm; })) { setMsg("이미 등록된 반"); return; }
-    arr.push({ id: uid(), n: nm });
-    dbSave("c", arr); R(); setMsg("✅ " + nm + " 등록"); setGr(""); setBn("");
-  }
-
-  function delC(cid) {
-    var s = dbLoad("s"); dbSave("s", s.filter(function (x) { return x.ci !== cid; }));
-    var b = dbLoad("b");
-    var dbIds = b.filter(function (x) { return x.ci === cid; }).map(function (x) { return x.id; });
-    dbSave("b", b.filter(function (x) { return x.ci !== cid; }));
-    var u = dbLoad("u"); dbSave("u", u.filter(function (x) { return dbIds.indexOf(x.bi) === -1; }));
-    var arr = dbLoad("c"); dbSave("c", arr.filter(function (x) { return x.id !== cid; }));
-    R(); setMsg("🗑 삭제 완료");
-  }
-
-  function gSF(ci) { return sf[ci] || { n: "", u: "" }; }
-  function sSF(ci, v) { setSf(function (p) { var o = Object.assign({}, p); o[ci] = v; return o; }); }
-
-  function addS(ci) {
-    var f = gSF(ci);
-    if (!f.n.trim() || !f.u) { setMsg("번호와 이름 입력"); return; }
-    var num = parseInt(f.u);
-    if (num < 1 || num > 7) { setMsg("번호는 1~7"); return; }
-    var arr = dbLoad("s");
-    if (arr.find(function (x) { return x.ci === ci && x.nu === num; })) { setMsg("번호 중복"); return; }
-    arr.push({ id: uid(), ci: ci, na: f.n.trim(), nu: num, ch: "" });
-    dbSave("s", arr); sSF(ci, { n: "", u: "" }); R(); setMsg("✅ 학생 등록");
-  }
-
-  function delS(sid) {
-    var arr = dbLoad("s"); dbSave("s", arr.filter(function (x) { return x.id !== sid; }));
-    R(); setMsg("🗑 삭제");
-  }
-
-  function saveCh() {
-    if (!ecId) return;
-    var arr = dbLoad("s");
-    var i = arr.findIndex(function (x) { return x.id === ecId; });
-    if (i >= 0) { arr[i].ch = ecTx; dbSave("s", arr); }
-    setEcId(null); setEcTx(""); R(); setMsg("✅ 특성 저장");
-  }
-
-  function addSB2() {
-    if (!ns.trim() || !sc) { setMsg("반 선택 + 과목명 입력"); return; }
-    var arr = dbLoad("b"); arr.push({ id: uid(), na: ns.trim(), ci: sc });
-    dbSave("b", arr); setNs(""); R(); setMsg("✅ 과목 등록");
-  }
-
-  function delSB2(bid) {
-    var u = dbLoad("u"); dbSave("u", u.filter(function (x) { return x.bi !== bid; }));
-    var arr = dbLoad("b"); dbSave("b", arr.filter(function (x) { return x.id !== bid; }));
-    R(); setMsg("🗑 삭제");
-  }
-
-  function addU() {
-    if (!ss || !nu.trim()) { setMsg("단원명 입력"); return; }
-    var arr = dbLoad("u");
-    var cnt = arr.filter(function (x) { return x.bi === ss; }).length;
-    arr.push({ id: uid(), bi: ss, na: nu.trim(), or: cnt + 1 });
-    dbSave("u", arr); setNu(""); R(); setMsg("✅ 단원 등록");
-  }
-
-  function delU(uid2) {
-    var r = dbLoad("r"); dbSave("r", r.filter(function (x) { return x.ui !== uid2; }));
-    var arr = dbLoad("u"); dbSave("u", arr.filter(function (x) { return x.id !== uid2; }));
-    R(); setMsg("🗑 삭제");
-  }
-
-  function saveRB2() {
-    if (!eru) return;
-    var arr = dbLoad("r");
-    var i = arr.findIndex(function (x) { return x.ui === eru; });
-    if (i >= 0) { arr[i] = { id: arr[i].id, ui: eru, h: rh, m: rm, l: rl }; }
-    else { arr.push({ id: uid(), ui: eru, h: rh, m: rm, l: rl }); }
-    dbSave("r", arr); R(); setMsg("✅ 평가기준 저장");
-  }
-
-  function ldRB(ui2) {
-    setEru(ui2);
-    var arr = dbLoad("r");
-    var r = arr.find(function (x) { return x.ui === ui2; });
-    setRh(r ? r.h || "" : ""); setRm(r ? r.m || "" : ""); setRl(r ? r.l || "" : "");
-  }
-
-  function ldMemos(sid, units2) {
-    var o = {}; var lv = {};
-    for (var i = 0; i < units2.length; i++) {
-      o[units2[i].id] = getMM(sid, units2[i].id);
-      lv[units2[i].id] = getMMLv(sid, units2[i].id);
+  function addStudent(cid) {
+    var nu = parseInt(snum);
+    var nm = sname.trim();
+    if (!nu || !nm) { props.toast("번호와 이름을 입력하세요"); return; }
+    if (students.some(function(s) { return s.ci === cid && s.nu === nu; })) {
+      props.toast("이미 등록된 번호입니다"); return;
     }
-    setMx(o); setMlv(lv);
+    var nw = students.concat([{id: uid(), ci: cid, na: nm, nu: nu, ch: ""}]);
+    props.saveT("s", nw); setStudents(nw);
+    setSname(""); setSnum("");
+    props.toast(nm + " 추가 완료");
   }
 
-  function saveMemo1(si, ui2) {
-    var tx = mx[ui2] || ""; var lv = mlv[ui2] || "";
-    var arr = dbLoad("m");
-    var i = arr.findIndex(function (x) { return x.si === si && x.ui === ui2; });
-    if (i >= 0) { arr[i].tx = tx; arr[i].lv = lv; }
-    else if (tx.trim() || lv) { arr.push({ id: uid(), si: si, ui: ui2, tx: tx, lv: lv }); }
-    dbSave("m", arr); R(); setMsg("✅ 저장");
+  function deleteStudent(sid) {
+    props.setModal({
+      msg: "학생을 삭제하시겠습니까?",
+      onConfirm: function() {
+        var ns = students.filter(function(s) { return s.id !== sid; });
+        props.saveT("s", ns); setStudents(ns);
+        var memos = props.loadT("m");
+        props.saveT("m", memos.filter(function(m) { return m.si !== sid; }));
+        props.toast("삭제 완료");
+      }
+    });
   }
 
-  function saveMemoAll(si) {
-    var arr = dbLoad("m");
-    var keys = Object.keys(mx);
-    for (var k = 0; k < keys.length; k++) {
-      var ui2 = keys[k]; var tx = mx[ui2] || ""; var lv = mlv[ui2] || "";
-      var i = arr.findIndex(function (x) { return x.si === si && x.ui === ui2; });
-      if (i >= 0) { arr[i].tx = tx; arr[i].lv = lv; }
-      else if (tx.trim() || lv) { arr.push({ id: uid(), si: si, ui: ui2, tx: tx, lv: lv }); }
+  function openChar(sid) {
+    var s = students.find(function(s) { return s.id === sid; });
+    setEditChar(sid);
+    setCharText(s ? s.ch : "");
+  }
+
+  function saveChar() {
+    var ns = students.map(function(s) {
+      if (s.id === editChar) return Object.assign({}, s, {ch: charText});
+      return s;
+    });
+    props.saveT("s", ns); setStudents(ns);
+    setEditChar(null);
+    props.toast("특성 저장 완료");
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">🏫</span>반 관리</h2>
+
+      {/* Add class */}
+      <div className="glass mb-16" style={{padding:20}}>
+        <p style={{fontWeight:600, marginBottom:12}}>학년 선택</p>
+        <div className="num-btn-group mb-12">
+          {[1,2,3,4,5,6].map(function(g) {
+            return <button key={g} className={"num-btn" + (grade===g?" active":"")} onClick={function(){setGrade(g);}}>{g}</button>;
+          })}
+        </div>
+        <p style={{fontWeight:600, marginBottom:12}}>반 선택</p>
+        <div className="num-btn-group mb-12">
+          {[1,2,3,4,5,6,7,8,9,10].map(function(c) {
+            return <button key={c} className={"num-btn" + (cnum===c?" active":"")} onClick={function(){setCnum(c);}}>{c}</button>;
+          })}
+        </div>
+        {grade && cnum && <p className="mb-12" style={{fontWeight:600, color: "var(--pink)"}}>{grade}학년 {cnum}반</p>}
+        <button className="btn btn-pink" onClick={addClass}>반 추가</button>
+      </div>
+
+      {/* Class list */}
+      <div className="card-list">
+        {classes.map(function(cl) {
+          var clStudents = students.filter(function(s) { return s.ci === cl.id; }).sort(function(a,b) { return a.nu - b.nu; });
+          return (
+            <div key={cl.id} className="card-item glass">
+              <div className="card-header">
+                <span className="card-title">{cl.n}</span>
+                <div className="flex gap-8">
+                  <span className="tag">{clStudents.length}명</span>
+                  <button className="btn btn-red btn-sm" onClick={function() { deleteClass(cl.id); }}>삭제</button>
+                </div>
+              </div>
+
+              {/* Student list */}
+              {clStudents.map(function(st) {
+                return (
+                  <div key={st.id} className="flex items-center gap-8 mb-8" style={{paddingLeft:8}}>
+                    <span className="tag" style={{minWidth:32, textAlign:"center"}}>{st.nu}</span>
+                    <span style={{fontWeight:500, flex:1}}>{st.na}</span>
+                    <button className="btn btn-ghost btn-sm" onClick={function() { openChar(st.id); }}>특성</button>
+                    <button className="btn btn-red btn-sm" onClick={function() { deleteStudent(st.id); }}>삭제</button>
+                  </div>
+                );
+              })}
+
+              {/* Character edit */}
+              {editChar && students.some(function(s) { return s.id === editChar && s.ci === cl.id; }) && (
+                <div className="glass" style={{padding:16, margin:"12px 0"}}>
+                  <p className="text-sm mb-8" style={{fontWeight:600}}>학생 특성</p>
+                  <textarea value={charText} onChange={function(e){setCharText(e.target.value);}} placeholder="예: 소근육 약함, 글자 인식 느림, 집중시간 짧음" />
+                  <div className="flex gap-8 mt-12">
+                    <button className="btn btn-pink btn-sm" onClick={saveChar}>저장</button>
+                    <button className="btn btn-ghost btn-sm" onClick={function(){setEditChar(null);}}>취소</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Add student */}
+              <div className="flex gap-8 mt-12" style={{paddingLeft:8}}>
+                <input type="number" placeholder="번호" value={snum} onChange={function(e){setSnum(e.target.value);}} style={{width:70}} min="1" max="7" />
+                <input type="text" placeholder="이름" value={sname} onChange={function(e){setSname(e.target.value);}} style={{flex:1}}
+                  onKeyDown={function(e) { if (e.key === "Enter") addStudent(cl.id); }} />
+                <button className="btn btn-mint btn-sm" onClick={function() { addStudent(cl.id); }}>추가</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   SUBJECT MANAGEMENT
+   ============================ */
+function PageSubject(props) {
+  var _sub = useState(function() { return props.loadT("b"); });
+  var subjects = _sub[0], setSubjects = _sub[1];
+  var classes = props.loadT("c");
+  var _ci = useState("");
+  var ci = _ci[0], setCi = _ci[1];
+  var _name = useState("");
+  var name = _name[0], setName = _name[1];
+
+  function addSubject() {
+    var nm = name.trim();
+    if (!ci || !nm) { props.toast("반과 과목명을 입력하세요"); return; }
+    if (subjects.some(function(s) { return s.ci === ci && s.na === nm; })) {
+      props.toast("이미 등록된 과목입니다"); return;
     }
-    dbSave("m", arr); R(); setMsg("✅ 전체 저장 완료");
+    var nw = subjects.concat([{id: uid(), na: nm, ci: ci}]);
+    props.saveT("b", nw); setSubjects(nw);
+    setName("");
+    props.toast(nm + " 추가 완료");
   }
 
-  // AI
-  function genAI(si, bi, callback) {
-    var allST = dbLoad("s"); var allSB = dbLoad("b"); var allUN = dbLoad("u"); var allRB = dbLoad("r");
-    var stu = allST.find(function (x) { return x.id === si; });
-    var sub = allSB.find(function (x) { return x.id === bi; });
-    if (!stu || !sub) { callback("정보 없음"); return; }
-    var us = allUN.filter(function (x) { return x.bi === bi; }).sort(function (a, b) { return a.or - b.or; });
-    var ud = us.map(function (u) {
-      var rb = allRB.find(function (x) { return x.ui === u.id; });
-      var mm = getMM(si, u.id);
-      var lv = getMMLv(si, u.id);
-      var lvLabel = lv === "h" ? "상" : lv === "m" ? "중" : lv === "l" ? "하" : "미선택";
-      return "단원:" + u.na + "\n교사 판단 도달수준: " + lvLabel +
-        "\n평가기준 상:" + (rb ? rb.h : "미등록") +
-        "\n평가기준 중:" + (rb ? rb.m : "미등록") +
-        "\n평가기준 하:" + (rb ? rb.l : "미등록") +
-        "\n교사 메모:" + (mm || "없음");
-    }).join("\n\n");
+  function deleteSubject(sid) {
+    var sub = subjects.find(function(s) { return s.id === sid; });
+    props.setModal({
+      msg: (sub ? sub.na : "과목") + "을(를) 삭제하면 소속 단원이 모두 삭제됩니다.",
+      onConfirm: function() {
+        var ns = subjects.filter(function(s) { return s.id !== sid; });
+        props.saveT("b", ns); setSubjects(ns);
+        var units = props.loadT("u");
+        var delUids = units.filter(function(u) { return u.bi === sid; }).map(function(u) { return u.id; });
+        props.saveT("u", units.filter(function(u) { return u.bi !== sid; }));
+        var rubrics = props.loadT("r");
+        props.saveT("r", rubrics.filter(function(r) { return delUids.indexOf(r.ui) < 0; }));
+        var memos = props.loadT("m");
+        props.saveT("m", memos.filter(function(m) { return delUids.indexOf(m.ui) < 0; }));
+        props.toast("삭제 완료");
+      }
+    });
+  }
 
-    fetch("https://claude-proxy.juninn9910.workers.dev", {
+  function getClassName(cid) {
+    var c = classes.find(function(c) { return c.id === cid; });
+    return c ? c.n : "";
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">📚</span>과목 관리</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center">
+          <select value={ci} onChange={function(e){setCi(e.target.value);}} style={{width:180}}>
+            <option value="">담당 반 선택</option>
+            {classes.map(function(c) {
+              return <option key={c.id} value={c.id}>{c.n}</option>;
+            })}
+          </select>
+          <input type="text" placeholder="과목명" value={name} onChange={function(e){setName(e.target.value);}} style={{flex:1}}
+            onKeyDown={function(e) { if (e.key === "Enter") addSubject(); }} />
+          <button className="btn btn-pink" onClick={addSubject}>추가</button>
+        </div>
+      </div>
+      <div className="card-list">
+        {subjects.map(function(sub) {
+          return (
+            <div key={sub.id} className="card-item glass">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-8">
+                  <span style={{fontWeight:600}}>{sub.na}</span>
+                  <span className="tag">{getClassName(sub.ci)}</span>
+                </div>
+                <button className="btn btn-red btn-sm" onClick={function() { deleteSubject(sub.id); }}>삭제</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   UNIT / RUBRIC
+   ============================ */
+function PageUnit(props) {
+  var subjects = props.loadT("b");
+  var _bi = useState("");
+  var bi = _bi[0], setBi = _bi[1];
+  var _units = useState(function() { return props.loadT("u"); });
+  var units = _units[0], setUnits = _units[1];
+  var _rubrics = useState(function() { return props.loadT("r"); });
+  var rubrics = _rubrics[0], setRubrics = _rubrics[1];
+  var _uname = useState("");
+  var uname = _uname[0], setUname = _uname[1];
+  var _editUid = useState(null);
+  var editUid = _editUid[0], setEditUid = _editUid[1];
+  var _rH = useState(""); var rH = _rH[0], setRH = _rH[1];
+  var _rM = useState(""); var rM = _rM[0], setRM = _rM[1];
+  var _rL = useState(""); var rL = _rL[0], setRL = _rL[1];
+
+  function refreshUnits() { var d = props.loadT("u"); setUnits(d); return d; }
+  function refreshRubrics() { var d = props.loadT("r"); setRubrics(d); return d; }
+
+  var filteredUnits = units.filter(function(u) { return u.bi === bi; }).sort(function(a,b) { return a.or - b.or; });
+
+  function addUnit() {
+    var nm = uname.trim();
+    if (!bi || !nm) { props.toast("과목과 단원명을 입력하세요"); return; }
+    var maxOr = filteredUnits.reduce(function(mx, u) { return Math.max(mx, u.or); }, 0);
+    var nw = units.concat([{id: uid(), bi: bi, na: nm, or: maxOr + 1}]);
+    props.saveT("u", nw); setUnits(nw);
+    setUname("");
+    props.toast("단원 추가 완료");
+  }
+
+  function deleteUnit(uid2) {
+    props.setModal({
+      msg: "단원을 삭제하시겠습니까?",
+      onConfirm: function() {
+        var nu = units.filter(function(u) { return u.id !== uid2; });
+        props.saveT("u", nu); setUnits(nu);
+        var nr = rubrics.filter(function(r) { return r.ui !== uid2; });
+        props.saveT("r", nr); setRubrics(nr);
+        var memos = props.loadT("m");
+        props.saveT("m", memos.filter(function(m) { return m.ui !== uid2; }));
+        props.toast("삭제 완료");
+      }
+    });
+  }
+
+  function openRubric(uid2) {
+    setEditUid(uid2);
+    var r = rubrics.find(function(r) { return r.ui === uid2; });
+    if (r) { setRH(r.h); setRM(r.m); setRL(r.l); }
+    else { setRH(""); setRM(""); setRL(""); }
+  }
+
+  function saveRubric() {
+    var existing = rubrics.find(function(r) { return r.ui === editUid; });
+    var nr;
+    if (existing) {
+      nr = rubrics.map(function(r) {
+        if (r.ui === editUid) return Object.assign({}, r, {h: rH, m: rM, l: rL});
+        return r;
+      });
+    } else {
+      nr = rubrics.concat([{id: uid(), ui: editUid, h: rH, m: rM, l: rL}]);
+    }
+    props.saveT("r", nr); setRubrics(nr);
+    setEditUid(null);
+    props.toast("평가기준 저장 완료");
+  }
+
+  function hasRubric(uid2) {
+    return rubrics.some(function(r) { return r.ui === uid2 && (r.h || r.m || r.l); });
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">📝</span>단원 / 평가기준</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center mb-12">
+          <select value={bi} onChange={function(e){setBi(e.target.value);}} style={{width:220}}>
+            <option value="">과목 선택</option>
+            {subjects.map(function(s) {
+              return <option key={s.id} value={s.id}>{s.na}</option>;
+            })}
+          </select>
+        </div>
+        {bi && (
+          <div className="flex gap-8">
+            <input type="text" placeholder="단원명 (예: 7. 안전한 이동)" value={uname} onChange={function(e){setUname(e.target.value);}} style={{flex:1}}
+              onKeyDown={function(e) { if (e.key === "Enter") addUnit(); }} />
+            <button className="btn btn-pink" onClick={addUnit}>추가</button>
+          </div>
+        )}
+      </div>
+
+      <div className="card-list">
+        {filteredUnits.map(function(u) {
+          return (
+            <div key={u.id} className="card-item glass">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-8">
+                  <span style={{fontWeight:600}}>{u.na}</span>
+                  {hasRubric(u.id) ? <span className="tag tag-mint">✓ 등록됨</span> : <span className="tag tag-red">✗ 미등록</span>}
+                </div>
+                <div className="flex gap-8">
+                  <button className="btn btn-lavender btn-sm" onClick={function() { openRubric(u.id); }}>평가기준</button>
+                  <button className="btn btn-red btn-sm" onClick={function() { deleteUnit(u.id); }}>삭제</button>
+                </div>
+              </div>
+
+              {editUid === u.id && (
+                <div className="glass" style={{padding:16, marginTop:8}}>
+                  <div className="mb-12">
+                    <p style={{fontWeight:600, color:"#059669", marginBottom:6}}>🟢 상</p>
+                    <textarea value={rH} onChange={function(e){setRH(e.target.value);}} placeholder="상 수준 평가기준"
+                      style={{borderColor:"rgba(52,211,153,0.3)"}} />
+                  </div>
+                  <div className="mb-12">
+                    <p style={{fontWeight:600, color:"#d97706", marginBottom:6}}>🟡 중</p>
+                    <textarea value={rM} onChange={function(e){setRM(e.target.value);}} placeholder="중 수준 평가기준"
+                      style={{borderColor:"rgba(251,191,36,0.3)"}} />
+                  </div>
+                  <div className="mb-12">
+                    <p style={{fontWeight:600, color:"#e11d48", marginBottom:6}}>🔴 하</p>
+                    <textarea value={rL} onChange={function(e){setRL(e.target.value);}} placeholder="하 수준 평가기준"
+                      style={{borderColor:"rgba(251,113,133,0.3)"}} />
+                  </div>
+                  <div className="flex gap-8">
+                    <button className="btn btn-pink btn-sm" onClick={saveRubric}>저장</button>
+                    <button className="btn btn-ghost btn-sm" onClick={function(){setEditUid(null);}}>취소</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   MEMO
+   ============================ */
+function PageMemo(props) {
+  var subjects = props.loadT("b");
+  var classes = props.loadT("c");
+  var allStudents = props.loadT("s");
+  var units = props.loadT("u");
+  var rubrics = props.loadT("r");
+  var _bi = useState("");
+  var bi = _bi[0], setBi = _bi[1];
+  var _si = useState("");
+  var si = _si[0], setSi = _si[1];
+  var _memos = useState(function() { return props.loadT("m"); });
+  var memos = _memos[0], setMemos = _memos[1];
+
+  var selectedSub = subjects.find(function(s) { return s.id === bi; });
+  var classStudents = selectedSub ? allStudents.filter(function(s) { return s.ci === selectedSub.ci; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
+  var selectedStudent = allStudents.find(function(s) { return s.id === si; });
+  var filteredUnits = units.filter(function(u) { return u.bi === bi; }).sort(function(a,b) { return a.or - b.or; });
+
+  function getMemo(unitId) {
+    return memos.find(function(m) { return m.si === si && m.ui === unitId; }) || null;
+  }
+
+  function updateMemoField(unitId, field, value) {
+    setMemos(function(prev) {
+      var existing = prev.find(function(m) { return m.si === si && m.ui === unitId; });
+      if (existing) {
+        return prev.map(function(m) {
+          if (m.si === si && m.ui === unitId) {
+            var obj = {}; obj[field] = value;
+            return Object.assign({}, m, obj);
+          }
+          return m;
+        });
+      } else {
+        var nm = {id: uid(), si: si, ui: unitId, tx: "", lv: ""};
+        nm[field] = value;
+        return prev.concat([nm]);
+      }
+    });
+  }
+
+  function saveMemoUnit(unitId) {
+    props.saveT("m", memos);
+    props.toast("저장 완료");
+  }
+
+  function saveAllMemos() {
+    props.saveT("m", memos);
+    props.toast("전체 저장 완료");
+  }
+
+  function onSubjectChange(e) {
+    setBi(e.target.value);
+    setSi("");
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">✏️</span>단원별 메모</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center">
+          <select value={bi} onChange={onSubjectChange} style={{width:200}}>
+            <option value="">과목 선택</option>
+            {subjects.map(function(s) {
+              var cl = classes.find(function(c) { return c.id === s.ci; });
+              return <option key={s.id} value={s.id}>{s.na} ({cl ? cl.n : ""})</option>;
+            })}
+          </select>
+          <select value={si} onChange={function(e){setSi(e.target.value);}} style={{width:160}}>
+            <option value="">학생 선택</option>
+            {classStudents.map(function(s) {
+              return <option key={s.id} value={s.id}>{s.nu}. {s.na}</option>;
+            })}
+          </select>
+        </div>
+        {selectedStudent && selectedStudent.ch && (
+          <div className="tag mt-12" style={{fontSize:13, padding:"6px 14px"}}>
+            특성: {selectedStudent.ch}
+          </div>
+        )}
+      </div>
+
+      {si && filteredUnits.length > 0 && (
+        <React.Fragment>
+          {filteredUnits.map(function(u) {
+            var memo = getMemo(u.id);
+            var rubric = rubrics.find(function(r) { return r.ui === u.id; });
+            var currentLv = memo ? memo.lv : "";
+            var currentTx = memo ? memo.tx : "";
+
+            return (
+              <div key={u.id} className="memo-unit-card glass">
+                <p style={{fontWeight:700, marginBottom:12}}>{u.na}</p>
+                <div className="memo-unit-inner">
+                  <div className="memo-unit-left">
+                    <div className="level-btn-group">
+                      <button className={"level-btn h" + (currentLv === "h" ? " active" : "")}
+                        onClick={function() { updateMemoField(u.id, "lv", "h"); }}>상</button>
+                      <button className={"level-btn m" + (currentLv === "m" ? " active" : "")}
+                        onClick={function() { updateMemoField(u.id, "lv", "m"); }}>중</button>
+                      <button className={"level-btn l" + (currentLv === "l" ? " active" : "")}
+                        onClick={function() { updateMemoField(u.id, "lv", "l"); }}>하</button>
+                    </div>
+                  </div>
+                  <div className="memo-unit-right">
+                    <textarea value={currentTx}
+                      onChange={function(e) { updateMemoField(u.id, "tx", e.target.value); }}
+                      placeholder="예: 5까지는 셈, 받아올림 아직 못함" />
+                    <button className="btn btn-mint btn-sm mt-12" onClick={function() { saveMemoUnit(u.id); }}>저장</button>
+                  </div>
+                </div>
+                {rubric && (
+                  <div className="rubric-preview">
+                    {rubric.h && <div className="rp-row"><span className="rp-label" style={{color:"#059669"}}>상: </span>{rubric.h}</div>}
+                    {rubric.m && <div className="rp-row"><span className="rp-label" style={{color:"#d97706"}}>중: </span>{rubric.m}</div>}
+                    {rubric.l && <div className="rp-row"><span className="rp-label" style={{color:"#e11d48"}}>하: </span>{rubric.l}</div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <button className="btn btn-pink w-full" style={{marginTop:8}} onClick={saveAllMemos}>전체 일괄 저장</button>
+        </React.Fragment>
+      )}
+
+      {si && filteredUnits.length === 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">등록된 단원이 없습니다. 먼저 단원을 등록하세요.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================
+   AI GENERATION
+   ============================ */
+function PageAI(props) {
+  var subjects = props.loadT("b");
+  var classes = props.loadT("c");
+  var allStudents = props.loadT("s");
+  var units = props.loadT("u");
+  var rubrics = props.loadT("r");
+  var memos = props.loadT("m");
+
+  var _bi = useState("");
+  var bi = _bi[0], setBi = _bi[1];
+  var _si = useState("");
+  var si = _si[0], setSi = _si[1];
+  var _results = useState([]);
+  var results = _results[0], setResults = _results[1];
+  var _loading = useState(false);
+  var loading = _loading[0], setLoading = _loading[1];
+
+  var selectedSub = subjects.find(function(s) { return s.id === bi; });
+  var classStudents = selectedSub ? allStudents.filter(function(s) { return s.ci === selectedSub.ci; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
+
+  var SYSTEM_PROMPT = "당신은 특수학교 교과학습발달상황 작성 전문가입니다.\n\n[작성 원칙]\n1. 모든 문장은 명사형 종결어미(~함, ~임)로 끝낸다.\n2. 상호명(유튜브, 카카오톡 등) 사용 금지. '동영상 공유 서비스', '메신저' 등으로 대체.\n3. 교사 개입 문구 전면 삭제: '교사의 도움을 받아', '언어적 촉구를 듣고', '신체적 지원으로', '교사와 함께' 등 일절 사용 금지.\n4. 학생이 최종적으로 수행한 행동 결과만 건조하고 명확하게 기술.\n   - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n5. 능동형 서술 필수. '~보임' 금지.\n   - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n6. 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼되, 교사 메모의 구체적 내용을 자연스럽게 녹여 서술.\n7. 교사 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n8. 학생 특성을 고려하여 서술 톤을 조절.\n9. 3~5문장으로 작성.\n10. 학생마다 반드시 다른 표현과 문장 구성 사용. 기계적 반복 금지.";
+
+  function buildPrompt(student) {
+    var subUnits = units.filter(function(u) { return u.bi === bi; }).sort(function(a,b) { return a.or - b.or; });
+    var lines = [];
+    lines.push("학생: " + student.na + " " + student.nu + "번");
+    lines.push("특성: " + (student.ch || "없음"));
+    lines.push("과목: " + (selectedSub ? selectedSub.na : ""));
+    lines.push("");
+
+    subUnits.forEach(function(u) {
+      var memo = memos.find(function(m) { return m.si === student.id && m.ui === u.id; });
+      var rubric = rubrics.find(function(r) { return r.ui === u.id; });
+      var lvLabel = "";
+      if (memo && memo.lv === "h") lvLabel = "상";
+      else if (memo && memo.lv === "m") lvLabel = "중";
+      else if (memo && memo.lv === "l") lvLabel = "하";
+
+      lines.push("[단원: " + u.na + "]");
+      lines.push("교사 판단 도달수준: " + (lvLabel || "미선택"));
+      lines.push("평가기준 상: " + (rubric ? rubric.h : "미등록"));
+      lines.push("평가기준 중: " + (rubric ? rubric.m : "미등록"));
+      lines.push("평가기준 하: " + (rubric ? rubric.l : "미등록"));
+      lines.push("교사 메모: " + (memo ? memo.tx : "없음"));
+      lines.push("");
+    });
+
+    return lines.join("\n");
+  }
+
+  function callAI(student) {
+    return fetch(API_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514", max_tokens: 1000,
-        system: "당신은 특수학교 교과학습발달상황 작성 전문가입니다.\n\n[작성 원칙]\n1. 모든 문장은 명사형 종결어미(~함, ~임)로 끝낸다.\n2. 상호명 사용 금지.\n3. 교사 개입 문구 전면 삭제.\n4. 학생이 수행한 결과만 기술.\n5. 능동형 서술('~보임' 금지).\n6. 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼되, 교사 메모의 구체적 내용을 자연스럽게 녹여 서술.\n7. 교사 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n8. 학생 특성을 고려.\n9. 3~5문장.\n10. 학생마다 반드시 다른 표현과 문장 구성.",
-        messages: [{ role: "user", content: "학생:" + stu.na + " " + stu.nu + "번\n특성:" + (stu.ch || "없음") + "\n과목:" + sub.na + "\n\n" + ud + "\n\n교과학습발달상황 초안 작성." }]
+        model: AI_MODEL,
+        max_tokens: 1000,
+        system: SYSTEM_PROMPT,
+        messages: [{role: "user", content: buildPrompt(student)}]
       })
     })
-    .then(function (res) { return res.json(); })
-    .then(function (d) {
-      var text = (d.content && d.content[0] && d.content[0].text) || "생성 실패";
-      callback(text);
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.content && data.content[0] && data.content[0].text) {
+        return data.content[0].text;
+      }
+      if (data.error) {
+        return "[오류] " + (data.error.message || JSON.stringify(data.error));
+      }
+      return "[오류] 응답을 받지 못했습니다.";
     })
-    .catch(function (e) { callback("❌ 오류: " + e.message); });
+    .catch(function(err) {
+      return "[오류] " + err.message;
+    });
   }
 
-  function gen1() {
-    if (!at2 || !as2) { setMsg("학생·과목 선택"); return; }
-    setAl(true); setAr("");
-    genAI(at2, as2, function (result) { setAr(result); setAl(false); });
+  function generateSingle() {
+    if (!si) { props.toast("학생을 선택하세요"); return; }
+    var student = allStudents.find(function(s) { return s.id === si; });
+    if (!student) return;
+    setLoading(true);
+    setResults([]);
+    callAI(student).then(function(text) {
+      setResults([{id: student.id, name: student.na, nu: student.nu, text: text}]);
+      setLoading(false);
+    });
   }
 
-  function genAll() {
-    if (!as2) { setMsg("과목 선택"); return; }
-    var allSB2 = dbLoad("b"); var allST2 = dbLoad("s");
-    var sub = allSB2.find(function (x) { return x.id === as2; });
-    if (!sub) return;
-    var sts = allST2.filter(function (x) { return x.ci === sub.ci; }).sort(function (a, b) { return a.nu - b.nu; });
-    if (!sts.length) { setMsg("학생 없음"); return; }
-    setAl(true); setAb([]);
-    var results = [];
+  function generateAll() {
+    if (classStudents.length === 0) { props.toast("학생이 없습니다"); return; }
+    setLoading(true);
+    setResults([]);
+
     var idx = 0;
     function next() {
-      if (idx >= sts.length) { setAl(false); setMsg("✅ 전체 완료"); return; }
-      genAI(sts[idx].id, as2, function (text) {
-        results.push({ s: sts[idx], t: text });
-        setAb(results.slice());
-        idx++;
+      if (idx >= classStudents.length) {
+        setLoading(false);
+        return;
+      }
+      var student = classStudents[idx];
+      idx++;
+      callAI(student).then(function(text) {
+        setResults(function(prev) {
+          return prev.concat([{id: student.id, name: student.na, nu: student.nu, text: text}]);
+        });
         next();
       });
     }
     next();
   }
 
-  // 스타일
-  var cd = { background:"#fff", borderRadius:12, padding:20, marginBottom:14, boxShadow:"0 1px 8px rgba(0,0,0,0.06)" };
-  var ip = { padding:"9px 12px", border:"2px solid #e2e8f0", borderRadius:8, fontSize:14, boxSizing:"border-box", outline:"none" };
-  var sl = { padding:"9px 12px", border:"2px solid #e2e8f0", borderRadius:8, fontSize:14, background:"#fff" };
-  var ta2 = { padding:"9px 12px", border:"2px solid #e2e8f0", borderRadius:8, fontSize:14, boxSizing:"border-box", outline:"none", resize:"vertical", width:"100%", minHeight:60 };
-  var dlS = { background:"none", border:"none", color:"#ef4444", cursor:"pointer", fontSize:12, fontWeight:600 };
-  var blS = { background:"none", border:"none", color:"#3b82f6", cursor:"pointer", fontSize:12, fontWeight:600 };
-
-  function bt(bg) { return { padding:"9px 18px", background:bg, color:"#fff", border:"none", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer" }; }
-  function tg(bg) { return { display:"inline-block", padding:"2px 8px", borderRadius:5, fontSize:11, fontWeight:600, background:bg, color:"#fff", marginRight:4 }; }
-  function sbtn(a) { return { display:"block", width:"100%", padding:"11px 16px", border:"none", textAlign:"left", cursor:"pointer", fontSize:13, fontWeight:a?700:400, color:a?"#fbbf24":"#cbd5e1", background:a?"#334155":"transparent" }; }
-  function pk(a) { return { padding:"7px 16px", margin:"0 4px 4px 0", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:600, border:a?"2px solid #3b82f6":"2px solid #e2e8f0", background:a?"#eff6ff":"#fff" }; }
-
-  // ===== 렌더링 =====
-  var content = null;
-
-  if (page === "home") {
-    content = (
-      <div>
-        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>🧑‍🏫 교사 홈</h2>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:10 }}>
-          {[["class","🏫","반 관리"],["subject","📚","과목 관리"],["unit","📝","단원/기준"],["memo","✏️","단원별 메모"],["report","🤖","교과학습발달상황"]].map(function (m) {
-            return (
-              <button key={m[0]} onClick={function () { setPage(m[0]); }} style={{ padding:14, background:"#f8fafc", border:"2px solid #e2e8f0", borderRadius:12, cursor:"pointer", textAlign:"center" }}>
-                <div style={{ fontSize:26 }}>{m[1]}</div>
-                <div style={{ fontSize:13, fontWeight:600, marginTop:4 }}>{m[2]}</div>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ ...cd, marginTop:16 }}>
-          <div style={{ fontSize:13, color:"#666" }}>💾 반 {CL.length} · 학생 {ST.length}명 · 과목 {SB.length} · 단원 {UN.length}</div>
-        </div>
-      </div>
-    );
+  function updateResultText(rid, text) {
+    setResults(function(prev) {
+      return prev.map(function(r) {
+        if (r.id === rid) return Object.assign({}, r, {text: text});
+        return r;
+      });
+    });
   }
 
-  if (page === "class") {
-    content = (
-      <div>
-        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>🏫 반 관리</h2>
-        <div style={cd}>
-          <div style={{ marginBottom:10 }}>
-            <span style={{ fontSize:13, fontWeight:600, marginRight:8 }}>학년</span>
-            {[1,2,3,4,5,6].map(function (n) {
-              return (<button key={n} onClick={function () { setGr(String(n)); }} style={pk(gr === String(n))}>{n}</button>);
-            })}
-          </div>
-          <div style={{ marginBottom:10 }}>
-            <span style={{ fontSize:13, fontWeight:600, marginRight:8 }}>반</span>
-            {[1,2,3,4,5,6,7,8,9,10].map(function (n) {
-              return (<button key={n} onClick={function () { setBn(String(n)); }} style={pk(bn === String(n))}>{n}</button>);
-            })}
-          </div>
-          {gr && bn && <div style={{ fontSize:14, marginBottom:8, fontWeight:600, color:"#3b82f6" }}>{gr}학년 {bn}반</div>}
-          <button onClick={addC} style={bt(gr && bn ? "#3b82f6" : "#cbd5e1")}>추가</button>
-        </div>
-        {CL.map(function (cl) {
-          var cs = ST.filter(function (x) { return x.ci === cl.id; }).sort(function (a, b) { return a.nu - b.nu; });
-          var f = gSF(cl.id);
-          return (
-            <div key={cl.id} style={cd}>
-              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
-                <h3 style={{ fontSize:15, fontWeight:700 }}>{cl.n} ({cs.length}명)</h3>
-                <button style={dlS} onClick={function () { var n2=cl.n; var i2=cl.id; setDlg({ m:"'" + n2 + "' 반을 삭제하시겠습니까?", f:function () { delC(i2); } }); }}>반 삭제</button>
-              </div>
-              {cs.map(function (s) {
-                return (
-                  <div key={s.id} style={{ padding:"6px 0", borderBottom:"1px solid #f1f5f9" }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                      <span style={{ fontSize:14 }}><strong>{s.nu}번</strong> {s.na} {s.ch && <span style={{ fontSize:11, color:"#6366f1" }}>({s.ch.length > 15 ? s.ch.substring(0,15) + "..." : s.ch})</span>}</span>
-                      <div style={{ display:"flex", gap:6 }}>
-                        <button style={blS} onClick={function () { setEcId(s.id); setEcTx(s.ch || ""); }}>특성</button>
-                        <button style={dlS} onClick={function () { var n3=s.na; var i3=s.id; setDlg({ m:"'" + n3 + "' 학생을 삭제하시겠습니까?", f:function () { delS(i3); } }); }}>삭제</button>
-                      </div>
-                    </div>
-                    {ecId === s.id && (
-                      <div style={{ marginTop:8 }}>
-                        <textarea value={ecTx} onChange={function (e) { setEcTx(e.target.value); }} placeholder="학생 특성 (예: 소근육 약함, 집중시간 짧음)" style={ta2} />
-                        <div style={{ display:"flex", gap:6, marginTop:6 }}>
-                          <button onClick={saveCh} style={bt("#10b981")}>저장</button>
-                          <button onClick={function () { setEcId(null); }} style={bt("#94a3b8")}>취소</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              <div style={{ display:"flex", gap:6, marginTop:10 }}>
-                <input type="number" min="1" max="7" value={f.u} onChange={function (e) { sSF(cl.id, { n:f.n, u:e.target.value }); }} placeholder="번호" style={{ ...ip, width:65 }} />
-                <input value={f.n} onChange={function (e) { sSF(cl.id, { n:e.target.value, u:f.u }); }} placeholder="이름" style={{ ...ip, flex:1 }} onKeyDown={function (e) { if (e.key === "Enter") addS(cl.id); }} />
-                <button onClick={function () { addS(cl.id); }} style={bt("#10b981")}>추가</button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
+  function copyText(text) {
+    navigator.clipboard.writeText(text).then(function() {
+      props.toast("복사 완료");
+    });
   }
 
-  if (page === "subject") {
-    content = (
-      <div>
-        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>📚 과목 관리</h2>
-        <div style={cd}>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            <select value={sc} onChange={function (e) { setSc(e.target.value); }} style={sl}>
-              <option value="">담당 반</option>
-              {CL.map(function (x) { return (<option key={x.id} value={x.id}>{x.n}</option>); })}
-            </select>
-            <input value={ns} onChange={function (e) { setNs(e.target.value); }} placeholder="과목명" style={{ ...ip, flex:1 }} onKeyDown={function (e) { if (e.key === "Enter") addSB2(); }} />
-            <button onClick={addSB2} style={bt("#3b82f6")}>추가</button>
-          </div>
-        </div>
-        {SB.map(function (x) {
-          var cl2 = CL.find(function (y) { return y.id === x.ci; });
-          return (
-            <div key={x.id} style={{ ...cd, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <div><span style={{ fontWeight:600 }}>{x.na}</span> {cl2 && <span style={tg("#6366f1")}>{cl2.n}</span>}</div>
-              <button style={dlS} onClick={function () { var n4=x.na; var i4=x.id; setDlg({ m:"'" + n4 + "' 과목을 삭제하시겠습니까?", f:function () { delSB2(i4); } }); }}>삭제</button>
-            </div>
-          );
-        })}
-      </div>
-    );
+  function copyAll() {
+    var all = results.map(function(r) {
+      return r.nu + ". " + r.name + "\n" + r.text;
+    }).join("\n\n---\n\n");
+    copyText(all);
   }
 
-  if (page === "unit") {
-    var fu = ss ? UN.filter(function (x) { return x.bi === ss; }).sort(function (a, b) { return a.or - b.or; }) : [];
-    content = (
-      <div>
-        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>📝 단원 / 평가기준</h2>
-        <div style={cd}>
-          <select value={ss} onChange={function (e) { setSs(e.target.value); setEru(""); }} style={{ ...sl, width:"100%" }}>
-            <option value="">과목 선택</option>
-            {SB.map(function (x) { var cl2 = CL.find(function (y) { return y.id === x.ci; }); return (<option key={x.id} value={x.id}>{x.na} ({cl2 ? cl2.n : ""})</option>); })}
-          </select>
-        </div>
-        {ss && (
-          <div style={cd}>
-            <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-              <input value={nu} onChange={function (e) { setNu(e.target.value); }} placeholder="단원명" style={{ ...ip, flex:1 }} onKeyDown={function (e) { if (e.key === "Enter") addU(); }} />
-              <button onClick={addU} style={bt("#3b82f6")}>추가</button>
-            </div>
-            {fu.map(function (u) {
-              var rb = RB.find(function (x) { return x.ui === u.id; });
-              var has = rb && (rb.h || rb.m || rb.l);
-              return (
-                <div key={u.id} style={{ padding:8, borderRadius:8, marginTop:6, background:eru === u.id ? "#eff6ff" : "#f8fafc", border:eru === u.id ? "2px solid #3b82f6" : "2px solid transparent" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <span style={{ fontSize:13, fontWeight:600, cursor:"pointer" }} onClick={function () { ldRB(u.id); }}>{u.or}. {u.na} {has ? <span style={tg("#10b981")}>✓</span> : <span style={tg("#f59e0b")}>✗</span>}</span>
-                    <div style={{ display:"flex", gap:6 }}>
-                      <button style={blS} onClick={function () { ldRB(u.id); }}>편집</button>
-                      <button style={dlS} onClick={function (e) { e.stopPropagation(); var n5=u.na; var i5=u.id; setDlg({ m:"'" + n5 + "' 단원을 삭제하시겠습니까?", f:function () { delU(i5); } }); }}>삭제</button>
-                    </div>
-                  </div>
-                  {eru === u.id && (
-                    <div style={{ marginTop:10, padding:12, background:"#fff", borderRadius:8, border:"1px solid #e2e8f0" }}>
-                      <div style={{ marginBottom:8 }}><label style={{ fontSize:13, fontWeight:600, color:"#10b981" }}>🟢 상</label><textarea value={rh} onChange={function (e) { setRh(e.target.value); }} style={{ ...ta2, minHeight:40, marginTop:4 }} /></div>
-                      <div style={{ marginBottom:8 }}><label style={{ fontSize:13, fontWeight:600, color:"#f59e0b" }}>🟡 중</label><textarea value={rm} onChange={function (e) { setRm(e.target.value); }} style={{ ...ta2, minHeight:40, marginTop:4 }} /></div>
-                      <div style={{ marginBottom:8 }}><label style={{ fontSize:13, fontWeight:600, color:"#ef4444" }}>🔴 하</label><textarea value={rl} onChange={function (e) { setRl(e.target.value); }} style={{ ...ta2, minHeight:40, marginTop:4 }} /></div>
-                      <button onClick={saveRB2} style={bt("#10b981")}>저장</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (page === "memo") {
-    var mSub = ms ? SB.find(function (x) { return x.id === ms; }) : null;
-    var mUn = mSub ? UN.filter(function (x) { return x.bi === ms; }).sort(function (a, b) { return a.or - b.or; }) : [];
-    var mSts = mSub ? ST.filter(function (x) { return x.ci === mSub.ci; }).sort(function (a, b) { return a.nu - b.nu; }) : [];
-    var mStu = mt2 ? ST.find(function (x) { return x.id === mt2; }) : null;
-
-    content = (
-      <div>
-        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>✏️ 단원별 학생 메모</h2>
-        <div style={cd}>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            <select value={ms} onChange={function (e) { setMs(e.target.value); setMt2(""); setMx({}); setMlv({}); }} style={sl}>
-              <option value="">과목</option>
-              {SB.map(function (x) { var cl2 = CL.find(function (y) { return y.id === x.ci; }); return (<option key={x.id} value={x.id}>{x.na} ({cl2 ? cl2.n : ""})</option>); })}
-            </select>
-            {ms && (
-              <select value={mt2} onChange={function (e) { var sid = e.target.value; setMt2(sid); if (sid) { ldMemos(sid, mUn); } else { setMx({}); setMlv({}); } }} style={sl}>
-                <option value="">학생</option>
-                {mSts.map(function (x) { return (<option key={x.id} value={x.id}>{x.nu}번 {x.na}</option>); })}
-              </select>
-            )}
-          </div>
-        </div>
-        {mStu && mUn.length > 0 && (
-          <div style={cd}>
-            <h3 style={{ fontSize:15, fontWeight:600, marginBottom:4 }}>{mStu.nu}번 {mStu.na}</h3>
-            {mStu.ch && <p style={{ fontSize:12, color:"#6366f1", marginBottom:12 }}>특성: {mStu.ch}</p>}
-            {mUn.map(function (u) {
-              var rb = RB.find(function (x) { return x.ui === u.id; });
-              var tx = mx[u.id] !== undefined ? mx[u.id] : "";
-              var lv = mlv[u.id] || "";
-              var unitId = u.id; var stuId = mt2;
-              return (
-                <div key={u.id} style={{ marginBottom:14, padding:12, background:"#f8fafc", borderRadius:8 }}>
-                  <div style={{ fontSize:13, fontWeight:600, marginBottom:6 }}>{u.or}. {u.na}</div>
-                  {rb && (
-                    <div style={{ fontSize:11, color:"#666", marginBottom:6, padding:6, background:"#fff", borderRadius:6, border:"1px solid #e2e8f0" }}>
-                      <span style={{ color:"#10b981" }}>상: {rb.h}</span><br />
-                      <span style={{ color:"#f59e0b" }}>중: {rb.m}</span><br />
-                      <span style={{ color:"#ef4444" }}>하: {rb.l}</span>
-                    </div>
-                  )}
-                  <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
-                    <div style={{ display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}>
-                      <span style={{ fontSize:12, fontWeight:600, marginBottom:2 }}>도달수준</span>
-                      {[["h","상","#10b981"],["m","중","#f59e0b"],["l","하","#ef4444"]].map(function (lv2) {
-                        var isA = lv === lv2[0];
-                        return (
-                          <button key={lv2[0]} onClick={function () { var v = lv2[0]; setMlv(function (p) { var o = Object.assign({}, p); o[unitId] = v; return o; }); }}
-                            style={{ padding:"6px 16px", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:700,
-                              border:isA ? "3px solid " + lv2[2] : "2px solid #e2e8f0",
-                              background:isA ? lv2[2] : "#fff",
-                              color:isA ? "#fff" : lv2[2] }}>
-                            {lv2[1]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div style={{ flex:1 }}>
-                      <span style={{ fontSize:12, fontWeight:600, marginBottom:2, display:"block" }}>메모 (구어체 OK)</span>
-                      <textarea value={tx} onChange={function (e) { var uid3 = unitId; setMx(function (p) { var o = Object.assign({}, p); o[uid3] = e.target.value; return o; }); }} placeholder="예: 5까지는 셈, 받아올림 아직 못함" style={ta2} />
-                    </div>
-                  </div>
-                  <button onClick={function () { saveMemo1(stuId, unitId); }} style={{ ...bt("#10b981"), marginTop:8, fontSize:12, padding:"6px 14px" }}>저장</button>
-                </div>
-              );
-            })}
-            <button onClick={function () { saveMemoAll(mt2); }} style={{ ...bt("#3b82f6"), marginTop:4 }}>📝 전체 일괄 저장</button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (page === "report") {
-    var rSub = as2 ? SB.find(function (x) { return x.id === as2; }) : null;
-    var rSts = rSub ? ST.filter(function (x) { return x.ci === rSub.ci; }).sort(function (a, b) { return a.nu - b.nu; }) : [];
-    content = (
-      <div>
-        <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>🤖 교과학습발달상황 생성</h2>
-        <div style={cd}>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
-            <select value={as2} onChange={function (e) { setAs2(e.target.value); setAt2(""); setAr(""); setAb([]); }} style={sl}>
-              <option value="">과목</option>
-              {SB.map(function (x) { var cl2 = CL.find(function (y) { return y.id === x.ci; }); return (<option key={x.id} value={x.id}>{x.na} ({cl2 ? cl2.n : ""})</option>); })}
-            </select>
-            {as2 && (
-              <select value={at2} onChange={function (e) { setAt2(e.target.value); setAr(""); }} style={sl}>
-                <option value="">학생(개별)</option>
-                {rSts.map(function (x) { return (<option key={x.id} value={x.id}>{x.nu}번 {x.na}</option>); })}
-              </select>
-            )}
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={gen1} disabled={al || !at2} style={bt(at2 && !al ? "#3b82f6" : "#cbd5e1")}>{al ? "⏳ 생성 중..." : "📝 개별 생성"}</button>
-            <button onClick={genAll} disabled={al || !as2} style={bt(as2 && !al ? "#8b5cf6" : "#cbd5e1")}>{al ? "⏳ 생성 중..." : "📋 전체 일괄"}</button>
-          </div>
-        </div>
-        {ar && (
-          <div style={cd}>
-            <h3 style={{ fontSize:15, fontWeight:600, marginBottom:10 }}>📝 결과</h3>
-            <textarea value={ar} onChange={function (e) { setAr(e.target.value); }} style={{ ...ta2, minHeight:120 }} />
-            <div style={{ display:"flex", gap:8, marginTop:10 }}>
-              <button onClick={function () { navigator.clipboard.writeText(ar); setMsg("📋 복사 완료"); }} style={bt("#10b981")}>복사</button>
-              <button onClick={gen1} style={bt("#f59e0b")}>재생성</button>
-            </div>
-          </div>
-        )}
-        {ab.length > 0 && (
-          <div>
-            <h3 style={{ fontSize:16, fontWeight:700, margin:"10px 0" }}>📋 전체 결과 ({ab.length}명)</h3>
-            {ab.map(function (x, i) {
-              return (
-                <div key={i} style={cd}>
-                  <div style={{ fontSize:14, fontWeight:700, marginBottom:8 }}>{x.s.nu}번 {x.s.na}</div>
-                  <textarea defaultValue={x.t} style={{ ...ta2, minHeight:100 }} />
-                  <button onClick={function () { navigator.clipboard.writeText(x.t); setMsg("📋 복사"); }} style={{ ...bt("#10b981"), marginTop:6 }}>복사</button>
-                </div>
-              );
-            })}
-            <button onClick={function () { var all2 = ab.map(function (x) { return x.s.nu + "번 " + x.s.na + "\n" + x.t; }).join("\n\n---\n\n"); navigator.clipboard.writeText(all2); setMsg("📋 전체 복사"); }} style={bt("#8b5cf6")}>전체 복사</button>
-          </div>
-        )}
-      </div>
-    );
+  function regenerateSingle(studentId) {
+    var student = allStudents.find(function(s) { return s.id === studentId; });
+    if (!student) return;
+    setResults(function(prev) {
+      return prev.map(function(r) {
+        if (r.id === studentId) return Object.assign({}, r, {text: "생성 중..."});
+        return r;
+      });
+    });
+    callAI(student).then(function(text) {
+      setResults(function(prev) {
+        return prev.map(function(r) {
+          if (r.id === studentId) return Object.assign({}, r, {text: text});
+          return r;
+        });
+      });
+    });
   }
 
   return (
-    <div style={{ minHeight:"100vh", background:"#f0f4f8", fontFamily:"-apple-system,sans-serif" }}>
-      <header style={{ background:"#1e40af", color:"#fff", padding:"12px 20px" }}>
-        <span style={{ fontSize:26 }}>📋</span>
-        <span style={{ fontSize:17, fontWeight:700, marginLeft:8 }}>과정중심평가 관리</span>
-      </header>
-      <div style={{ display:"flex", minHeight:"calc(100vh - 52px)" }}>
-        <nav style={{ width:180, background:"#1e293b", padding:"12px 0", flexShrink:0 }}>
-          {[["home","🏠","홈"],["class","🏫","반 관리"],["subject","📚","과목 관리"],["unit","📝","단원/기준"],["memo","✏️","단원별 메모"],["report","🤖","교과학습발달상황"]].map(function (m) {
-            return (
-              <button key={m[0]} onClick={function () { setPage(m[0]); }} style={sbtn(page === m[0])}>{m[1]} {m[2]}</button>
-            );
-          })}
-        </nav>
-        <div style={{ flex:1, padding:20, maxWidth:900, overflowY:"auto" }}>
-          {content}
+    <div>
+      <h2 className="section-title"><span className="emoji">🤖</span>교과학습발달상황</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center mb-12">
+          <select value={bi} onChange={function(e){setBi(e.target.value); setSi(""); setResults([]);}} style={{width:200}}>
+            <option value="">과목 선택</option>
+            {subjects.map(function(s) {
+              var cl = classes.find(function(c) { return c.id === s.ci; });
+              return <option key={s.id} value={s.id}>{s.na} ({cl ? cl.n : ""})</option>;
+            })}
+          </select>
+          <select value={si} onChange={function(e){setSi(e.target.value);}} style={{width:160}}>
+            <option value="">학생 선택</option>
+            {classStudents.map(function(s) {
+              return <option key={s.id} value={s.id}>{s.nu}. {s.na}</option>;
+            })}
+          </select>
+        </div>
+        <div className="flex gap-8">
+          <button className="btn btn-pink" onClick={generateSingle} disabled={loading}>
+            {loading ? <span className="spinner"></span> : "📝"} 개별 생성
+          </button>
+          <button className="btn btn-lavender" onClick={generateAll} disabled={loading}>
+            {loading ? <span className="spinner"></span> : "📋"} 전체 일괄
+          </button>
         </div>
       </div>
-      {dlg && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999 }}>
-          <div style={{ background:"#fff", borderRadius:16, padding:32, width:340, textAlign:"center" }}>
-            <div style={{ fontSize:36, marginBottom:12 }}>⚠️</div>
-            <p style={{ fontSize:15, fontWeight:600, marginBottom:20 }}>{dlg.m}</p>
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={function () { setDlg(null); }} style={{ flex:1, padding:12, background:"#e2e8f0", border:"none", borderRadius:8, fontSize:14, fontWeight:600, cursor:"pointer" }}>취소</button>
-              <button onClick={function () { if (dlg.f) dlg.f(); setDlg(null); }} style={{ flex:1, padding:12, background:"#ef4444", color:"#fff", border:"none", borderRadius:8, fontSize:14, fontWeight:600, cursor:"pointer" }}>삭제</button>
-            </div>
-          </div>
+
+      {loading && results.length === 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <div className="spinner" style={{width:32, height:32, marginBottom:12}}></div>
+          <p>생성 중...</p>
         </div>
       )}
-      {msg && <Toast msg={msg} done={function () { setMsg(""); }} />}
+
+      {results.length > 0 && (
+        <React.Fragment>
+          {results.length > 1 && (
+            <div className="mb-16" style={{textAlign:"right"}}>
+              <button className="btn btn-mint" onClick={copyAll}>전체 한번에 복사</button>
+            </div>
+          )}
+          {results.map(function(r) {
+            return (
+              <div key={r.id} className="ai-result-card glass">
+                <div className="flex items-center justify-between">
+                  <span style={{fontWeight:700}}>{r.nu}. {r.name}</span>
+                  <div className="flex gap-8">
+                    <button className="btn btn-ghost btn-sm" onClick={function() { copyText(r.text); }}>복사</button>
+                    <button className="btn btn-lavender btn-sm" onClick={function() { regenerateSingle(r.id); }}>재생성</button>
+                  </div>
+                </div>
+                <textarea value={r.text} onChange={function(e) { updateResultText(r.id, e.target.value); }} />
+              </div>
+            );
+          })}
+        </React.Fragment>
+      )}
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+/* ============================
+   RENDER
+   ============================ */
+var root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(App));
 </script>
 </body>
 </html>
