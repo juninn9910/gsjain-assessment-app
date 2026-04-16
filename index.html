@@ -178,7 +178,7 @@ select { cursor: pointer; }
 /* Teacher Select Screen */
 .teacher-select-screen {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  min-height: 100vh; padding: 40px 20px;
+  min-height: calc(100vh - 120px); padding: 40px 20px 20px;
 }
 .teacher-select-box {
   max-width: 480px; width: 100%; padding: 40px; text-align: center;
@@ -208,6 +208,102 @@ select { cursor: pointer; }
 .home-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(236,72,153,0.12); }
 .home-card .emoji { font-size: 36px; margin-bottom: 12px; }
 .home-card .label { font-size: 15px; font-weight: 600; }
+
+/* Home hero (상단 인사 + 현황) */
+.home-hero {
+  padding: 28px 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 32px;
+  flex-wrap: wrap;
+}
+.home-hero-title {
+  font-size: 24px; font-weight: 700; color: var(--text-dark);
+  letter-spacing: -0.01em; line-height: 1.35;
+}
+.home-stats { display: flex; gap: 20px; flex-wrap: wrap; }
+.home-stat {
+  padding: 14px 22px; border-radius: 14px;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid var(--card-border);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  min-width: 96px;
+}
+.home-stat-label { font-size: 12px; color: var(--text-sub); font-weight: 600; margin-bottom: 4px; letter-spacing: 0.02em; }
+.home-stat-value {
+  font-size: 24px; font-weight: 700; color: var(--pink);
+  display: flex; align-items: baseline; gap: 4px;
+}
+.home-stat-unit { font-size: 13px; font-weight: 500; color: var(--text-sub); }
+
+/* Home rich cards */
+.home-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 40px;
+}
+.home-card-rich {
+  padding: 22px 22px 20px;
+  text-align: left; cursor: pointer;
+  border: none; font-family: inherit; color: var(--text-dark);
+  display: flex; flex-direction: column; gap: 10px;
+  transition: all 0.25s ease;
+  position: relative; overflow: hidden;
+}
+.home-card-rich::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--pink), var(--pink-light));
+  opacity: 0; transition: opacity 0.25s ease;
+}
+.home-card-rich:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 40px rgba(236,72,153,0.14);
+  border-color: rgba(236,72,153,0.3);
+}
+.home-card-rich:hover::before { opacity: 1; }
+.home-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 2px;
+}
+.home-card-emoji { font-size: 32px; line-height: 1; }
+.home-card-chip {
+  font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 12px;
+  background: rgba(236,72,153,0.1); color: var(--pink);
+  backdrop-filter: blur(8px);
+}
+.home-card-chip-accent {
+  background: linear-gradient(135deg, var(--pink), var(--pink-light));
+  color: white; letter-spacing: 0.05em;
+}
+.home-card-title { font-size: 17px; font-weight: 700; color: var(--text-dark); }
+.home-card-desc { font-size: 13px; color: var(--text-sub); line-height: 1.55; flex: 1; }
+.home-card-cta {
+  font-size: 13px; font-weight: 600; color: var(--pink);
+  margin-top: 6px; opacity: 0.8; transition: all 0.2s ease;
+}
+.home-card-rich:hover .home-card-cta { opacity: 1; transform: translateX(2px); }
+.home-card-highlight {
+  background: linear-gradient(135deg, rgba(255,255,255,0.75), rgba(252,231,243,0.65));
+}
+
+/* Footer */
+.app-footer {
+  margin-left: 220px; padding: 24px 32px 40px;
+  text-align: center;
+}
+.app-footer-inner {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 10px 22px; border-radius: 20px;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
+  font-size: 12px; color: var(--text-sub); font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.app-footer-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--pink); opacity: 0.6;
+}
+.app-footer-brand { color: var(--pink); font-weight: 700; }
 
 /* Section title */
 .section-title { font-size: 22px; font-weight: 700; margin-bottom: 20px; }
@@ -280,10 +376,16 @@ select { cursor: pointer; }
 @media (max-width: 768px) {
   .sidebar { width: 180px; }
   .main { margin-left: 180px; }
+  .app-footer { margin-left: 180px; }
+  .home-hero { padding: 22px; gap: 20px; }
+  .home-hero-title { font-size: 20px; }
 }
 @media (max-width: 600px) {
   .sidebar { display: none; }
   .main { margin-left: 0; }
+  .app-footer { margin-left: 0; padding: 20px 16px 32px; }
+  .home-stats { width: 100%; }
+  .home-stat { flex: 1 1 calc(50% - 10px); min-width: 0; }
 }
 
 /* Scrollbar */
@@ -409,6 +511,15 @@ function App() {
     return (
       <React.Fragment>
         <TeacherSelect teachers={teachers} saveTeachers={saveTeachers} onSelect={setTeacherId} toast={toast} />
+        <footer className="app-footer" style={{marginLeft:0, paddingBottom:32}}>
+          <div className="app-footer-inner">
+            <span className="app-footer-brand">경산자인학교</span>
+            <span className="app-footer-dot"></span>
+            <span>Process-Based Assessment System</span>
+            <span className="app-footer-dot"></span>
+            <span>© {new Date().getFullYear()}</span>
+          </div>
+        </footer>
         <ToastContainer toasts={toasts} />
       </React.Fragment>
     );
@@ -449,6 +560,15 @@ function App() {
         {page === "memo" && <PageMemo loadT={loadT} saveT={saveT} toast={toast} />}
         {page === "ai" && <PageAI loadT={loadT} saveT={saveT} toast={toast} />}
       </div>
+      <footer className="app-footer">
+        <div className="app-footer-inner">
+          <span className="app-footer-brand">경산자인학교</span>
+          <span className="app-footer-dot"></span>
+          <span>Process-Based Assessment System</span>
+          <span className="app-footer-dot"></span>
+          <span>© {new Date().getFullYear()}</span>
+        </div>
+      </footer>
       {modal && <Modal modal={modal} setModal={setModal} />}
       <ToastContainer toasts={toasts} />
     </React.Fragment>
@@ -544,31 +664,89 @@ function PageHome(props) {
   var subjects = props.loadT("b");
   var units = props.loadT("u");
 
-  var cards = [
-    {key:"class", icon:"🏫", label:"반 관리"},
-    {key:"subject", icon:"📚", label:"과목 관리"},
-    {key:"unit", icon:"📝", label:"단원/평가기준"},
-    {key:"memo", icon:"✏️", label:"단원별 메모"},
-    {key:"ai", icon:"🤖", label:"교과학습발달상황"}
-  ];
+  var now = new Date();
+  var hour = now.getHours();
+  var greeting = hour < 6 ? "밤이 깊었습니다" : hour < 12 ? "좋은 아침입니다" : hour < 18 ? "좋은 오후입니다" : "수고 많으셨습니다";
 
   return (
     <div>
-      <div className="home-grid">
-        {cards.map(function(c) {
-          return (
-            <button key={c.key} className="home-card glass" onClick={function() { props.setPage(c.key); }}>
-              <div className="emoji">{c.icon}</div>
-              <div className="label">{c.label}</div>
-            </button>
-          );
-        })}
+      {/* 상단 인사 + 현황 */}
+      <div className="home-hero glass-strong mb-16">
+        <div>
+          <p className="text-sub text-sm mb-8">{greeting}</p>
+          <h1 className="home-hero-title">오늘도 아이들의 성장을 기록합니다.</h1>
+        </div>
+        <div className="home-stats">
+          <div className="home-stat">
+            <div className="home-stat-label">관리 반</div>
+            <div className="home-stat-value">{classes.length}<span className="home-stat-unit">개</span></div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-label">학생</div>
+            <div className="home-stat-value">{students.length}<span className="home-stat-unit">명</span></div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-label">과목</div>
+            <div className="home-stat-value">{subjects.length}<span className="home-stat-unit">개</span></div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-label">단원</div>
+            <div className="home-stat-value">{units.length}<span className="home-stat-unit">개</span></div>
+          </div>
+        </div>
       </div>
-      <div className="glass" style={{padding:20, textAlign:"center"}}>
-        <span className="tag" style={{margin:"0 4px"}}>반 {classes.length}개</span>
-        <span className="tag" style={{margin:"0 4px"}}>학생 {students.length}명</span>
-        <span className="tag" style={{margin:"0 4px"}}>과목 {subjects.length}개</span>
-        <span className="tag" style={{margin:"0 4px"}}>단원 {units.length}개</span>
+
+      {/* 주요 기능 카드 */}
+      <div className="home-card-grid">
+        <button className="home-card-rich glass" onClick={function() { props.setPage("class"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">🏫</span>
+            <span className="home-card-chip">{classes.length}개 반 · {students.length}명</span>
+          </div>
+          <div className="home-card-title">반 관리</div>
+          <div className="home-card-desc">학년·반을 등록하고 학생의 이름과 특성을 기록합니다.</div>
+          <div className="home-card-cta">관리하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass" onClick={function() { props.setPage("subject"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">📚</span>
+            <span className="home-card-chip">{subjects.length}개 과목</span>
+          </div>
+          <div className="home-card-title">과목 관리</div>
+          <div className="home-card-desc">담당 반별로 개설 과목을 등록하고 묶습니다.</div>
+          <div className="home-card-cta">관리하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass" onClick={function() { props.setPage("unit"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">📝</span>
+            <span className="home-card-chip">{units.length}개 단원</span>
+          </div>
+          <div className="home-card-title">단원 / 평가기준</div>
+          <div className="home-card-desc">학기별 단원과 상·중·하 평가기준을 설정합니다.</div>
+          <div className="home-card-cta">관리하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass" onClick={function() { props.setPage("memo"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">✏️</span>
+            <span className="home-card-chip">학생별 기록</span>
+          </div>
+          <div className="home-card-title">단원별 메모</div>
+          <div className="home-card-desc">학생별 도달 수준과 관찰 메모를 남깁니다.</div>
+          <div className="home-card-cta">작성하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass home-card-highlight" onClick={function() { props.setPage("ai"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">🤖</span>
+            <span className="home-card-chip home-card-chip-accent">AI</span>
+          </div>
+          <div className="home-card-title">교과학습발달상황</div>
+          <div className="home-card-desc">입력된 메모를 바탕으로 나이스 입력용 초안을 자동 생성합니다.</div>
+          <div className="home-card-cta">생성하기 →</div>
+        </button>
       </div>
     </div>
   );
