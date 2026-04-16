@@ -321,12 +321,37 @@ select { cursor: pointer; }
    ============================ */
 var API_ENDPOINT = "https://anthropic-proxy-virid.vercel.app/api/claude";
 var AI_MODEL = "claude-sonnet-4-6";
+var BYTE_MIN = 500;
+var BYTE_MAX = 650;
 
 /* ============================
    UTILS
    ============================ */
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+}
+
+/* EUC-KR 기준 바이트 계산 (한글 2바이트, 영문/숫자 1바이트) */
+function countBytes(s) {
+  if (!s) return 0;
+  var n = 0;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    n += (c > 127) ? 2 : 1;
+  }
+  return n;
+}
+
+/* EUC-KR 기준 바이트 제한에 맞춰 문자열 자르기 */
+function truncateByBytes(s, maxBytes) {
+  if (!s) return s;
+  var n = 0;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    n += (c > 127) ? 2 : 1;
+    if (n > maxBytes) return s.substring(0, i);
+  }
+  return s;
 }
 
 function loadJSON(key, fallback) {
@@ -813,8 +838,11 @@ function PageSubject(props) {
    ============================ */
 function PageUnit(props) {
   var subjects = props.loadT("b");
+
   var _bi = useState("");
   var bi = _bi[0], setBi = _bi[1];
+  var _sm = useState(1);  /* 선택된 학기 (1 또는 2) */
+  var sm = _sm[0], setSm = _sm[1];
   var _units = useState(function() { return props.loadT("u"); });
   var units = _units[0], setUnits = _units[1];
   var _rubrics = useState(function() { return props.loadT("r"); });
@@ -827,19 +855,29 @@ function PageUnit(props) {
   var _rM = useState(""); var rM = _rM[0], setRM = _rM[1];
   var _rL = useState(""); var rL = _rL[0], setRL = _rL[1];
 
-  function refreshUnits() { var d = props.loadT("u"); setUnits(d); return d; }
-  function refreshRubrics() { var d = props.loadT("r"); setRubrics(d); return d; }
+  /* 기존 단원 마이그레이션: sm 필드 없으면 1학기로 자동 지정 */
+  useEffect(function() {
+    var needMigrate = units.some(function(u) { return !u.sm; });
+    if (needMigrate) {
+      var migrated = units.map(function(u) {
+        if (!u.sm) return Object.assign({}, u, {sm: 1});
+        return u;
+      });
+      props.saveT("u", migrated);
+      setUnits(migrated);
+    }
+  }, []);
 
-  var filteredUnits = units.filter(function(u) { return u.bi === bi; }).sort(function(a,b) { return a.or - b.or; });
+  var filteredUnits = units.filter(function(u) { return u.bi === bi && u.sm === sm; }).sort(function(a,b) { return a.or - b.or; });
 
   function addUnit() {
     var nm = uname.trim();
     if (!bi || !nm) { props.toast("과목과 단원명을 입력하세요"); return; }
     var maxOr = filteredUnits.reduce(function(mx, u) { return Math.max(mx, u.or); }, 0);
-    var nw = units.concat([{id: uid(), bi: bi, na: nm, or: maxOr + 1}]);
+    var nw = units.concat([{id: uid(), bi: bi, na: nm, or: maxOr + 1, sm: sm}]);
     props.saveT("u", nw); setUnits(nw);
     setUname("");
-    props.toast("단원 추가 완료");
+    props.toast(sm + "학기 단원 추가 완료");
   }
 
   function deleteUnit(uid2) {
@@ -895,10 +933,14 @@ function PageUnit(props) {
               return <option key={s.id} value={s.id}>{s.na}</option>;
             })}
           </select>
+          <div className="flex gap-8" style={{marginLeft:8}}>
+            <button className={"num-btn" + (sm===1?" active":"")} style={{width:"auto", padding:"0 16px"}} onClick={function(){setSm(1);}}>1학기</button>
+            <button className={"num-btn" + (sm===2?" active":"")} style={{width:"auto", padding:"0 16px"}} onClick={function(){setSm(2);}}>2학기</button>
+          </div>
         </div>
         {bi && (
           <div className="flex gap-8">
-            <input type="text" placeholder="단원명 (예: 7. 안전한 이동)" value={uname} onChange={function(e){setUname(e.target.value);}} style={{flex:1}}
+            <input type="text" placeholder={sm + "학기 단원명 (예: 7. 안전한 이동)"} value={uname} onChange={function(e){setUname(e.target.value);}} style={{flex:1}}
               onKeyDown={function(e) { if (e.key === "Enter") addUnit(); }} />
             <button className="btn btn-pink" onClick={addUnit}>추가</button>
           </div>
@@ -962,6 +1004,8 @@ function PageMemo(props) {
   var rubrics = props.loadT("r");
   var _bi = useState("");
   var bi = _bi[0], setBi = _bi[1];
+  var _sm = useState(1);
+  var sm = _sm[0], setSm = _sm[1];
   var _si = useState("");
   var si = _si[0], setSi = _si[1];
   var _memos = useState(function() { return props.loadT("m"); });
@@ -970,7 +1014,7 @@ function PageMemo(props) {
   var selectedSub = subjects.find(function(s) { return s.id === bi; });
   var classStudents = selectedSub ? allStudents.filter(function(s) { return s.ci === selectedSub.ci; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
   var selectedStudent = allStudents.find(function(s) { return s.id === si; });
-  var filteredUnits = units.filter(function(u) { return u.bi === bi; }).sort(function(a,b) { return a.or - b.or; });
+  var filteredUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === sm; }).sort(function(a,b) { return a.or - b.or; });
 
   function getMemo(unitId) {
     return memos.find(function(m) { return m.si === si && m.ui === unitId; }) || null;
@@ -1014,7 +1058,7 @@ function PageMemo(props) {
     <div>
       <h2 className="section-title"><span className="emoji">✏️</span>단원별 메모</h2>
       <div className="glass mb-16" style={{padding:20}}>
-        <div className="flex gap-8 items-center">
+        <div className="flex gap-8 items-center" style={{flexWrap:"wrap"}}>
           <select value={bi} onChange={onSubjectChange} style={{width:200}}>
             <option value="">과목 선택</option>
             {subjects.map(function(s) {
@@ -1022,6 +1066,10 @@ function PageMemo(props) {
               return <option key={s.id} value={s.id}>{s.na} ({cl ? cl.n : ""})</option>;
             })}
           </select>
+          <div className="flex gap-8">
+            <button className={"num-btn" + (sm===1?" active":"")} style={{width:"auto", padding:"0 16px"}} onClick={function(){setSm(1);}}>1학기</button>
+            <button className={"num-btn" + (sm===2?" active":"")} style={{width:"auto", padding:"0 16px"}} onClick={function(){setSm(2);}}>2학기</button>
+          </div>
           <select value={si} onChange={function(e){setSi(e.target.value);}} style={{width:160}}>
             <option value="">학생 선택</option>
             {classStudents.map(function(s) {
@@ -1103,22 +1151,25 @@ function PageAI(props) {
   var bi = _bi[0], setBi = _bi[1];
   var _si = useState("");
   var si = _si[0], setSi = _si[1];
-  var _results = useState([]);
+  var _results = useState([]);  /* {id, name, nu, sm, text} */
   var results = _results[0], setResults = _results[1];
   var _loading = useState(false);
   var loading = _loading[0], setLoading = _loading[1];
+  var _loadingSm = useState(0);  /* 현재 생성 중인 학기 (1 또는 2), 0이면 대기 */
+  var loadingSm = _loadingSm[0], setLoadingSm = _loadingSm[1];
 
   var selectedSub = subjects.find(function(s) { return s.id === bi; });
   var classStudents = selectedSub ? allStudents.filter(function(s) { return s.ci === selectedSub.ci; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
 
-  var SYSTEM_PROMPT = "당신은 특수학교 교과학습발달상황 작성 전문가입니다.\n\n[작성 원칙]\n1. 모든 문장은 명사형 종결어미(~함, ~임)로 끝낸다.\n2. 상호명(유튜브, 카카오톡 등) 사용 금지. '동영상 공유 서비스', '메신저' 등으로 대체.\n3. 교사 개입 문구 전면 삭제: '교사의 도움을 받아', '언어적 촉구를 듣고', '신체적 지원으로', '교사와 함께' 등 일절 사용 금지.\n4. 학생이 최종적으로 수행한 행동 결과만 건조하고 명확하게 기술.\n   - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n5. 능동형 서술 필수. '~보임' 금지.\n   - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n6. 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼되, 교사 메모의 구체적 내용을 자연스럽게 녹여 서술.\n7. 교사 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n8. 학생 특성을 고려하여 서술 톤을 조절.\n9. 3~5문장으로 작성.\n10. 학생마다 반드시 다른 표현과 문장 구성 사용. 기계적 반복 금지.";
+  var SYSTEM_PROMPT = "당신은 특수학교 교과학습발달상황 작성 전문가입니다.\n\n[작성 원칙]\n1. 모든 문장은 명사형 종결어미(~함, ~임)로 끝낸다.\n2. 상호명(유튜브, 카카오톡 등) 사용 금지. '동영상 공유 서비스', '메신저' 등으로 대체.\n3. 교사 개입 문구 전면 삭제: '교사의 도움을 받아', '언어적 촉구를 듣고', '신체적 지원으로', '교사와 함께' 등 일절 사용 금지.\n4. 학생이 최종적으로 수행한 행동 결과만 건조하고 명확하게 기술.\n   - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n5. 능동형 서술 필수. '~보임' 금지.\n   - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n6. 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼되, 교사 메모의 구체적 내용을 자연스럽게 녹여 서술.\n7. 교사 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n8. 학생 특성을 고려하여 서술 톤을 조절.\n9. 학생마다 반드시 다른 표현과 문장 구성 사용. 기계적 반복 금지.\n\n[분량 제약 — 매우 중요]\n- 반드시 EUC-KR 기준 500~650바이트 이내로 작성 (한글 약 250~325자).\n- 650바이트를 절대 초과하지 말 것. 650바이트에 가까울수록 좋음.\n- 불필요한 수식어·중복 표현 제거. 핵심만 압축.\n- 서두·마무리 문구 없이 본문만 출력. '다음과 같음', '아래와 같음' 등 금지.\n- 순수 서술문만 출력. 제목·불릿·번호 금지.";
 
-  function buildPrompt(student) {
-    var subUnits = units.filter(function(u) { return u.bi === bi; }).sort(function(a,b) { return a.or - b.or; });
+  function buildPrompt(student, semester) {
+    var subUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === semester; }).sort(function(a,b) { return a.or - b.or; });
     var lines = [];
     lines.push("학생: " + student.na + " " + student.nu + "번");
     lines.push("특성: " + (student.ch || "없음"));
     lines.push("과목: " + (selectedSub ? selectedSub.na : ""));
+    lines.push("학기: " + semester + "학기");
     lines.push("");
 
     subUnits.forEach(function(u) {
@@ -1138,24 +1189,30 @@ function PageAI(props) {
       lines.push("");
     });
 
+    lines.push("위 자료로 " + semester + "학기 교과학습발달상황을 작성. EUC-KR 기준 500~650바이트 이내 엄수.");
     return lines.join("\n");
   }
 
-  function callAI(student) {
+  function callAI(student, semester) {
+    var subUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === semester; });
+    if (subUnits.length === 0) {
+      return Promise.resolve("[생성 불가] " + semester + "학기에 등록된 단원이 없습니다.");
+    }
+
     return fetch(API_ENDPOINT, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         model: AI_MODEL,
-        max_tokens: 1000,
+        max_tokens: 1500,
         system: SYSTEM_PROMPT,
-        messages: [{role: "user", content: buildPrompt(student)}]
+        messages: [{role: "user", content: buildPrompt(student, semester)}]
       })
     })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.content && data.content[0] && data.content[0].text) {
-        return data.content[0].text;
+        return data.content[0].text.trim();
       }
       if (data.error) {
         return "[오류] " + (data.error.message || JSON.stringify(data.error));
@@ -1167,34 +1224,42 @@ function PageAI(props) {
     });
   }
 
-  function generateSingle() {
+  function generateSingle(semester) {
     if (!si) { props.toast("학생을 선택하세요"); return; }
     var student = allStudents.find(function(s) { return s.id === si; });
     if (!student) return;
     setLoading(true);
-    setResults([]);
-    callAI(student).then(function(text) {
-      setResults([{id: student.id, name: student.na, nu: student.nu, text: text}]);
+    setLoadingSm(semester);
+    /* 기존 결과 중 같은 학생·같은 학기만 제거하고 유지 */
+    setResults(function(prev) { return prev.filter(function(r) { return !(r.id === student.id && r.sm === semester); }); });
+    callAI(student, semester).then(function(text) {
+      setResults(function(prev) {
+        return prev.concat([{id: student.id, name: student.na, nu: student.nu, sm: semester, text: text}]);
+      });
       setLoading(false);
+      setLoadingSm(0);
     });
   }
 
-  function generateAll() {
+  function generateAll(semester) {
     if (classStudents.length === 0) { props.toast("학생이 없습니다"); return; }
     setLoading(true);
-    setResults([]);
+    setLoadingSm(semester);
+    /* 해당 학기 결과만 초기화 */
+    setResults(function(prev) { return prev.filter(function(r) { return r.sm !== semester; }); });
 
     var idx = 0;
     function next() {
       if (idx >= classStudents.length) {
         setLoading(false);
+        setLoadingSm(0);
         return;
       }
       var student = classStudents[idx];
       idx++;
-      callAI(student).then(function(text) {
+      callAI(student, semester).then(function(text) {
         setResults(function(prev) {
-          return prev.concat([{id: student.id, name: student.na, nu: student.nu, text: text}]);
+          return prev.concat([{id: student.id, name: student.na, nu: student.nu, sm: semester, text: text}]);
         });
         next();
       });
@@ -1202,10 +1267,10 @@ function PageAI(props) {
     next();
   }
 
-  function updateResultText(rid, text) {
+  function updateResultText(rid, rsm, text) {
     setResults(function(prev) {
       return prev.map(function(r) {
-        if (r.id === rid) return Object.assign({}, r, {text: text});
+        if (r.id === rid && r.sm === rsm) return Object.assign({}, r, {text: text});
         return r;
       });
     });
@@ -1217,37 +1282,81 @@ function PageAI(props) {
     });
   }
 
-  function copyAll() {
-    var all = results.map(function(r) {
-      return r.nu + ". " + r.name + "\n" + r.text;
-    }).join("\n\n---\n\n");
+  function copyAllOfSemester(semester) {
+    var all = results.filter(function(r) { return r.sm === semester; })
+      .sort(function(a,b) { return a.nu - b.nu; })
+      .map(function(r) { return r.nu + ". " + r.name + "\n" + r.text; })
+      .join("\n\n---\n\n");
     copyText(all);
   }
 
-  function regenerateSingle(studentId) {
+  function regenerateSingle(studentId, semester) {
     var student = allStudents.find(function(s) { return s.id === studentId; });
     if (!student) return;
     setResults(function(prev) {
       return prev.map(function(r) {
-        if (r.id === studentId) return Object.assign({}, r, {text: "생성 중..."});
+        if (r.id === studentId && r.sm === semester) return Object.assign({}, r, {text: "생성 중..."});
         return r;
       });
     });
-    callAI(student).then(function(text) {
+    callAI(student, semester).then(function(text) {
       setResults(function(prev) {
         return prev.map(function(r) {
-          if (r.id === studentId) return Object.assign({}, r, {text: text});
+          if (r.id === studentId && r.sm === semester) return Object.assign({}, r, {text: text});
           return r;
         });
       });
     });
   }
 
+  /* 학기별 결과 그룹핑 */
+  var results1 = results.filter(function(r) { return r.sm === 1; }).sort(function(a,b) { return a.nu - b.nu; });
+  var results2 = results.filter(function(r) { return r.sm === 2; }).sort(function(a,b) { return a.nu - b.nu; });
+
+  function renderResultCard(r) {
+    var bytes = countBytes(r.text);
+    var over = bytes > BYTE_MAX;
+    var under = bytes < BYTE_MIN && !r.text.startsWith("[");
+    return (
+      <div key={r.id + "-" + r.sm} className="ai-result-card glass">
+        <div className="flex items-center justify-between">
+          <span style={{fontWeight:700}}>{r.nu}. {r.name} <span className="tag" style={{marginLeft:8}}>{r.sm}학기</span></span>
+          <div className="flex gap-8">
+            <button className="btn btn-ghost btn-sm" onClick={function() { copyText(r.text); }}>복사</button>
+            <button className="btn btn-lavender btn-sm" onClick={function() { regenerateSingle(r.id, r.sm); }}>재생성</button>
+          </div>
+        </div>
+        <textarea value={r.text} onChange={function(e) { updateResultText(r.id, r.sm, e.target.value); }} />
+        <div className="flex items-center justify-between" style={{fontSize:12, marginTop:4}}>
+          <span style={{color: over ? "#e11d48" : (under ? "#d97706" : "#059669"), fontWeight:600}}>
+            {bytes} / {BYTE_MAX} 바이트 {over ? "⚠ 초과" : (under ? "(분량 부족)" : "✓")}
+          </span>
+          <span className="text-sub">권장 {BYTE_MIN}~{BYTE_MAX}바이트 (EUC-KR)</span>
+        </div>
+      </div>
+    );
+  }
+
+  function renderSemesterBlock(semester, resultArr) {
+    if (resultArr.length === 0) return null;
+    return (
+      <div className="mb-24">
+        <div className="flex items-center justify-between mb-12">
+          <h3 style={{fontSize:18, fontWeight:700}}>📚 {semester}학기 결과 ({resultArr.length}명)</h3>
+          {resultArr.length > 1 && (
+            <button className="btn btn-mint btn-sm" onClick={function() { copyAllOfSemester(semester); }}>{semester}학기 전체 복사</button>
+          )}
+        </div>
+        {resultArr.map(renderResultCard)}
+      </div>
+    );
+  }
+
   return (
     <div>
       <h2 className="section-title"><span className="emoji">🤖</span>교과학습발달상황</h2>
       <div className="glass mb-16" style={{padding:20}}>
-        <div className="flex gap-8 items-center mb-12">
+        <div className="flex gap-8 items-center mb-12" style={{flexWrap:"wrap"}}>
           <select value={bi} onChange={function(e){setBi(e.target.value); setSi(""); setResults([]);}} style={{width:200}}>
             <option value="">과목 선택</option>
             {subjects.map(function(s) {
@@ -1262,46 +1371,43 @@ function PageAI(props) {
             })}
           </select>
         </div>
-        <div className="flex gap-8">
-          <button className="btn btn-pink" onClick={generateSingle} disabled={loading}>
-            {loading ? <span className="spinner"></span> : "📝"} 개별 생성
-          </button>
-          <button className="btn btn-lavender" onClick={generateAll} disabled={loading}>
-            {loading ? <span className="spinner"></span> : "📋"} 전체 일괄
-          </button>
+
+        {/* 개별 생성 (학기별) */}
+        <div style={{marginBottom:8}}>
+          <p className="text-sm mb-8" style={{fontWeight:600, color:"var(--text-sub)"}}>개별 생성 (선택한 학생 1명)</p>
+          <div className="flex gap-8">
+            <button className="btn btn-pink" onClick={function(){generateSingle(1);}} disabled={loading}>
+              {loading && loadingSm === 1 && results.length === 0 ? <span className="spinner"></span> : "📝"} 1학기 생성
+            </button>
+            <button className="btn btn-pink" onClick={function(){generateSingle(2);}} disabled={loading}>
+              {loading && loadingSm === 2 && results.length === 0 ? <span className="spinner"></span> : "📝"} 2학기 생성
+            </button>
+          </div>
+        </div>
+
+        {/* 전체 일괄 (학기별) */}
+        <div style={{marginTop:16, paddingTop:16, borderTop:"1px solid var(--card-border)"}}>
+          <p className="text-sm mb-8" style={{fontWeight:600, color:"var(--text-sub)"}}>전체 일괄 ({classStudents.length}명 · 해당 학기)</p>
+          <div className="flex gap-8">
+            <button className="btn btn-lavender" onClick={function(){generateAll(1);}} disabled={loading}>
+              {loading && loadingSm === 1 ? <span className="spinner"></span> : "📋"} 1학기 전체 일괄
+            </button>
+            <button className="btn btn-lavender" onClick={function(){generateAll(2);}} disabled={loading}>
+              {loading && loadingSm === 2 ? <span className="spinner"></span> : "📋"} 2학기 전체 일괄
+            </button>
+          </div>
         </div>
       </div>
 
       {loading && results.length === 0 && (
         <div className="glass text-center" style={{padding:40}}>
           <div className="spinner" style={{width:32, height:32, marginBottom:12}}></div>
-          <p>생성 중...</p>
+          <p>{loadingSm}학기 생성 중...</p>
         </div>
       )}
 
-      {results.length > 0 && (
-        <React.Fragment>
-          {results.length > 1 && (
-            <div className="mb-16" style={{textAlign:"right"}}>
-              <button className="btn btn-mint" onClick={copyAll}>전체 한번에 복사</button>
-            </div>
-          )}
-          {results.map(function(r) {
-            return (
-              <div key={r.id} className="ai-result-card glass">
-                <div className="flex items-center justify-between">
-                  <span style={{fontWeight:700}}>{r.nu}. {r.name}</span>
-                  <div className="flex gap-8">
-                    <button className="btn btn-ghost btn-sm" onClick={function() { copyText(r.text); }}>복사</button>
-                    <button className="btn btn-lavender btn-sm" onClick={function() { regenerateSingle(r.id); }}>재생성</button>
-                  </div>
-                </div>
-                <textarea value={r.text} onChange={function(e) { updateResultText(r.id, e.target.value); }} />
-              </div>
-            );
-          })}
-        </React.Fragment>
-      )}
+      {renderSemesterBlock(1, results1)}
+      {renderSemesterBlock(2, results2)}
     </div>
   );
 }
