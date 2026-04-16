@@ -915,7 +915,7 @@ function PageClass(props) {
 
               {/* Add student */}
               <div className="flex gap-8 mt-12" style={{paddingLeft:8}}>
-                <input type="number" placeholder="번호" value={snum} onChange={function(e){setSnum(e.target.value);}} style={{width:70}} min="1" max="7" />
+                <input type="number" placeholder="번호" value={snum} onChange={function(e){setSnum(e.target.value);}} style={{width:70}} min="1" max="30" />
                 <input type="text" placeholder="이름" value={sname} onChange={function(e){setSname(e.target.value);}} style={{flex:1}}
                   onKeyDown={function(e) { if (e.key === "Enter") addStudent(cl.id); }} />
                 <button className="btn btn-mint btn-sm" onClick={function() { addStudent(cl.id); }}>추가</button>
@@ -1051,6 +1051,10 @@ function PageUnit(props) {
   function addUnit() {
     var nm = uname.trim();
     if (!bi || !nm) { props.toast("과목과 단원명을 입력하세요"); return; }
+    /* 같은 과목·같은 학기에 동일 이름 중복 방지 */
+    if (units.some(function(u) { return u.bi === bi && (u.sm || 1) === sm && u.na === nm; })) {
+      props.toast("이미 등록된 단원입니다"); return;
+    }
     var maxOr = filteredUnits.reduce(function(mx, u) { return Math.max(mx, u.or); }, 0);
     var nw = units.concat([{id: uid(), bi: bi, na: nm, or: maxOr + 1, sm: sm}]);
     props.saveT("u", nw); setUnits(nw);
@@ -1188,6 +1192,8 @@ function PageMemo(props) {
   var si = _si[0], setSi = _si[1];
   var _memos = useState(function() { return props.loadT("m"); });
   var memos = _memos[0], setMemos = _memos[1];
+  var _savedAt = useState(null);
+  var savedAt = _savedAt[0], setSavedAt = _savedAt[1];
 
   var selectedSub = subjects.find(function(s) { return s.id === bi; });
   var classStudents = selectedSub ? allStudents.filter(function(s) { return s.ci === selectedSub.ci; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
@@ -1198,33 +1204,26 @@ function PageMemo(props) {
     return memos.find(function(m) { return m.si === si && m.ui === unitId; }) || null;
   }
 
+  /* 메모 업데이트 + 즉시 localStorage 저장 (auto-save) */
   function updateMemoField(unitId, field, value) {
-    setMemos(function(prev) {
-      var existing = prev.find(function(m) { return m.si === si && m.ui === unitId; });
-      if (existing) {
-        return prev.map(function(m) {
-          if (m.si === si && m.ui === unitId) {
-            var obj = {}; obj[field] = value;
-            return Object.assign({}, m, obj);
-          }
-          return m;
-        });
-      } else {
-        var nm = {id: uid(), si: si, ui: unitId, tx: "", lv: ""};
-        nm[field] = value;
-        return prev.concat([nm]);
-      }
-    });
-  }
-
-  function saveMemoUnit(unitId) {
-    props.saveT("m", memos);
-    props.toast("저장 완료");
-  }
-
-  function saveAllMemos() {
-    props.saveT("m", memos);
-    props.toast("전체 저장 완료");
+    var newMemos;
+    var existing = memos.find(function(m) { return m.si === si && m.ui === unitId; });
+    if (existing) {
+      newMemos = memos.map(function(m) {
+        if (m.si === si && m.ui === unitId) {
+          var obj = {}; obj[field] = value;
+          return Object.assign({}, m, obj);
+        }
+        return m;
+      });
+    } else {
+      var nm = {id: uid(), si: si, ui: unitId, tx: "", lv: ""};
+      nm[field] = value;
+      newMemos = memos.concat([nm]);
+    }
+    setMemos(newMemos);
+    props.saveT("m", newMemos);  /* 즉시 저장 */
+    setSavedAt(new Date());
   }
 
   function onSubjectChange(e) {
@@ -1254,6 +1253,11 @@ function PageMemo(props) {
               return <option key={s.id} value={s.id}>{s.nu}. {s.na}</option>;
             })}
           </select>
+          {savedAt && (
+            <span className="tag tag-mint" style={{fontSize:11, marginLeft:"auto"}}>
+              ✓ 자동 저장됨 · {savedAt.toTimeString().substring(0,5)}
+            </span>
+          )}
         </div>
         {selectedStudent && selectedStudent.ch && (
           <div className="tag mt-12" style={{fontSize:13, padding:"6px 14px"}}>
@@ -1261,6 +1265,24 @@ function PageMemo(props) {
           </div>
         )}
       </div>
+
+      {!bi && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">과목을 먼저 선택하세요.</p>
+        </div>
+      )}
+
+      {bi && !si && classStudents.length > 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">학생을 선택하면 {sm}학기 단원별 메모를 작성할 수 있습니다.</p>
+        </div>
+      )}
+
+      {bi && classStudents.length === 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">해당 반에 등록된 학생이 없습니다. 반 관리에서 학생을 먼저 등록하세요.</p>
+        </div>
+      )}
 
       {si && filteredUnits.length > 0 && (
         <React.Fragment>
@@ -1288,7 +1310,6 @@ function PageMemo(props) {
                     <textarea value={currentTx}
                       onChange={function(e) { updateMemoField(u.id, "tx", e.target.value); }}
                       placeholder="예: 5까지는 셈, 받아올림 아직 못함" />
-                    <button className="btn btn-mint btn-sm mt-12" onClick={function() { saveMemoUnit(u.id); }}>저장</button>
                   </div>
                 </div>
                 {rubric && (
@@ -1301,13 +1322,12 @@ function PageMemo(props) {
               </div>
             );
           })}
-          <button className="btn btn-pink w-full" style={{marginTop:8}} onClick={saveAllMemos}>전체 일괄 저장</button>
         </React.Fragment>
       )}
 
       {si && filteredUnits.length === 0 && (
         <div className="glass text-center" style={{padding:40}}>
-          <p className="text-sub">등록된 단원이 없습니다. 먼저 단원을 등록하세요.</p>
+          <p className="text-sub">{sm}학기에 등록된 단원이 없습니다. 단원/평가기준에서 먼저 등록하세요.</p>
         </div>
       )}
     </div>
@@ -1339,7 +1359,7 @@ function PageAI(props) {
   var selectedSub = subjects.find(function(s) { return s.id === bi; });
   var classStudents = selectedSub ? allStudents.filter(function(s) { return s.ci === selectedSub.ci; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
 
-  var SYSTEM_PROMPT = "당신은 특수학교 교과학습발달상황 작성 전문가입니다.\n\n[작성 원칙]\n1. 모든 문장은 명사형 종결어미(~함, ~임)로 끝낸다.\n2. 상호명(유튜브, 카카오톡 등) 사용 금지. '동영상 공유 서비스', '메신저' 등으로 대체.\n3. 교사 개입 문구 전면 삭제: '교사의 도움을 받아', '언어적 촉구를 듣고', '신체적 지원으로', '교사와 함께' 등 일절 사용 금지.\n4. 학생이 최종적으로 수행한 행동 결과만 건조하고 명확하게 기술.\n   - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n5. 능동형 서술 필수. '~보임' 금지.\n   - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n6. 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼되, 교사 메모의 구체적 내용을 자연스럽게 녹여 서술.\n7. 교사 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n8. 학생 특성을 고려하여 서술 톤을 조절.\n9. 학생마다 반드시 다른 표현과 문장 구성 사용. 기계적 반복 금지.\n\n[분량 제약 — 매우 중요]\n- 반드시 EUC-KR 기준 500~650바이트 이내로 작성 (한글 약 250~325자).\n- 650바이트를 절대 초과하지 말 것. 650바이트에 가까울수록 좋음.\n- 불필요한 수식어·중복 표현 제거. 핵심만 압축.\n- 서두·마무리 문구 없이 본문만 출력. '다음과 같음', '아래와 같음' 등 금지.\n- 순수 서술문만 출력. 제목·불릿·번호 금지.";
+  var SYSTEM_PROMPT = "당신은 특수학교 교과학습발달상황 작성 전문가입니다. 통지표에 그대로 나가는 공식 기록이므로 다음 원칙을 엄격히 지킵니다.\n\n[1. 문장 종결 — 완결형 명사형]\n- 모든 문장은 '~함', '~임'으로 끝낸다. 진행형 '~하고 있음'은 절대 금지.\n  - (X) 관찰하고 있음 → (O) 관찰함\n  - (X) 참여함을 보임 → (O) 참여함\n\n[2. 관찰자 시점 금지 — 학생 주체 능동형]\n- '~보임', '~것으로 나타남', '~모습이 관찰됨' 등 관찰자 시점 표현 전면 금지.\n- 학생을 주어로 한 능동형 동사로만 기술한다: 관찰함, 탐색함, 응시함, 선택함, 표현함, 구분함, 조작함, 참여함, 경험함, 접촉함, 시도함, 수행함, 완성함 등.\n  - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n  - (X) 집중하는 모습이 관찰됨 → (O) 끝까지 집중하여 과제를 완성함\n\n[3. 부정 서술 배제 — 할 수 있는 것 중심]\n- '부족함', '미흡함', '어려워함', '못함', '하지 못함' 등 학생의 결손·결핍을 드러내는 서술 금지.\n- 학생이 실제로 수행한 것, 도달한 수준, 참여한 활동을 중심으로 긍정적으로 기술.\n- '하' 수준 학생도 참여·경험·접촉·탐색·반응 등 능동적 행동이 있으므로, 그 행동을 주어로 삼아 서술.\n  - (X) 덧셈을 어려워하나 단순 수세기는 가능함 → (O) 10 이내의 수를 세고 구체물을 수 순서에 맞게 배열함\n\n[4. 교사 개입 표현 처리 — 기본 제거, 불가피 시 '촉진']\n- 원칙적으로 '교사의 도움을 받아', '교사와 함께', '신체적 보조', '교사가 손을 잡고' 등 교사 개입 문구는 전부 삭제하고, 학생이 최종적으로 수행한 행동만 기술한다.\n  - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n  - (X) 교사와 함께 색칠함 → (O) 색연필로 도형 안을 색칠함\n- 도움을 빼면 서술이 성립하지 않는 경우에만 예외적으로 '~ 촉진'이라는 전문 용어로 바꿔 사용 가능: '신체적 촉진', '언어적 촉진', '시각적 촉진', '몸짓 촉진' 등. 단, 남용 금지.\n  - (X) 교사의 도움을 받아 숟가락을 잡음 → (O) 신체적 촉진을 통해 숟가락을 바르게 쥐고 음식물을 입으로 옮김\n\n[5. 상호명·외래어 순화]\n- 특정 상호·브랜드명 사용 금지. 일반 명사로 대체.\n  - 유튜브 → 동영상 공유 서비스 / 카카오톡 → 메신저 / 네이버 → 포털 사이트\n- 외래어·외국어 표현은 되도록 사용하지 않고 우리말로 순화한다. 일반적으로 통용되는 우리말이 있는 경우 반드시 우리말을 우선 사용.\n  - (X) 컬러 → (O) 색깔 / (X) 체크함 → (O) 확인함 / (X) 미션 → (O) 과제\n  - (X) 테이블 → (O) 책상 / (X) 스티커 → (O) 붙임 딱지 / (X) 게임 → (O) 놀이\n  - 단, 해당 우리말 표현이 어색하거나 해당 맥락에서 뜻이 불분명한 경우에 한해 외래어 허용.\n\n[6. 내용 구성 — 평가기준 골격 + 메모 구체화]\n- 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼는다.\n- 교사 메모의 구체적 행동·수행 내용을 자연스럽게 녹여 서술한다.\n- 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n- 학생 특성을 고려해 서술의 톤과 초점을 조절한다.\n- 학생마다 표현·어휘·문장 구성을 다르게 하여 기계적 반복을 피한다.\n\n[7. 분량 — EUC-KR 기준 500~650바이트 엄수]\n- 반드시 500~650바이트 이내 (한글 약 250~325자).\n- 650바이트 절대 초과 금지. 650바이트에 가까울수록 좋음.\n- 불필요한 수식어·중복 표현 제거. 핵심 행동과 도달 수준 중심으로 압축.\n\n[8. 출력 형식]\n- 서두·마무리 인사 없이 본문 서술만 출력한다.\n- '다음과 같음', '아래와 같이', '정리하면' 등 메타 문구 금지.\n- 제목, 불릿, 번호, 줄바꿈 구분 없이 하나의 서술 문단으로 출력한다.";
 
   function buildPrompt(student, semester) {
     var subUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === semester; }).sort(function(a,b) { return a.or - b.or; });
@@ -1382,7 +1402,7 @@ function PageAI(props) {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         model: AI_MODEL,
-        max_tokens: 1500,
+        max_tokens: 800,
         system: SYSTEM_PROMPT,
         messages: [{role: "user", content: buildPrompt(student, semester)}]
       })
@@ -1487,6 +1507,40 @@ function PageAI(props) {
     });
   }
 
+  function clearResults() {
+    setResults([]);
+    props.toast("결과를 모두 지웠습니다");
+  }
+
+  function removeResult(studentId, semester) {
+    setResults(function(prev) {
+      return prev.filter(function(r) { return !(r.id === studentId && r.sm === semester); });
+    });
+  }
+
+  /* 학기별 데이터 준비도 체크 */
+  function checkReadiness(semester) {
+    var subUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === semester; });
+    if (subUnits.length === 0) return {unitCount: 0, rubricCount: 0, studentsWithData: 0};
+
+    var rubricIds = rubrics.filter(function(r) { return subUnits.some(function(u) { return u.id === r.ui; }); }).map(function(r) { return r.ui; });
+
+    var studentsWithData = classStudents.filter(function(s) {
+      return subUnits.some(function(u) {
+        return memos.some(function(m) { return m.si === s.id && m.ui === u.id && (m.tx || m.lv); });
+      });
+    }).length;
+
+    return {
+      unitCount: subUnits.length,
+      rubricCount: rubricIds.length,
+      studentsWithData: studentsWithData
+    };
+  }
+
+  var ready1 = bi ? checkReadiness(1) : null;
+  var ready2 = bi ? checkReadiness(2) : null;
+
   /* 학기별 결과 그룹핑 */
   var results1 = results.filter(function(r) { return r.sm === 1; }).sort(function(a,b) { return a.nu - b.nu; });
   var results2 = results.filter(function(r) { return r.sm === 2; }).sort(function(a,b) { return a.nu - b.nu; });
@@ -1502,6 +1556,7 @@ function PageAI(props) {
           <div className="flex gap-8">
             <button className="btn btn-ghost btn-sm" onClick={function() { copyText(r.text); }}>복사</button>
             <button className="btn btn-lavender btn-sm" onClick={function() { regenerateSingle(r.id, r.sm); }}>재생성</button>
+            <button className="btn btn-red btn-sm" onClick={function() { removeResult(r.id, r.sm); }}>✕</button>
           </div>
         </div>
         <textarea value={r.text} onChange={function(e) { updateResultText(r.id, r.sm, e.target.value); }} />
@@ -1550,15 +1605,27 @@ function PageAI(props) {
           </select>
         </div>
 
+        {/* 학기별 데이터 준비도 안내 */}
+        {bi && (ready1 || ready2) && (
+          <div className="flex gap-8 mb-12" style={{flexWrap:"wrap"}}>
+            <span className={"tag " + (ready1 && ready1.unitCount > 0 && ready1.studentsWithData > 0 ? "tag-mint" : "tag-amber")}>
+              1학기 · 단원 {ready1 ? ready1.unitCount : 0}개 · 평가기준 {ready1 ? ready1.rubricCount : 0}개 · 메모작성 학생 {ready1 ? ready1.studentsWithData : 0}명
+            </span>
+            <span className={"tag " + (ready2 && ready2.unitCount > 0 && ready2.studentsWithData > 0 ? "tag-mint" : "tag-amber")}>
+              2학기 · 단원 {ready2 ? ready2.unitCount : 0}개 · 평가기준 {ready2 ? ready2.rubricCount : 0}개 · 메모작성 학생 {ready2 ? ready2.studentsWithData : 0}명
+            </span>
+          </div>
+        )}
+
         {/* 개별 생성 (학기별) */}
         <div style={{marginBottom:8}}>
           <p className="text-sm mb-8" style={{fontWeight:600, color:"var(--text-sub)"}}>개별 생성 (선택한 학생 1명)</p>
           <div className="flex gap-8">
             <button className="btn btn-pink" onClick={function(){generateSingle(1);}} disabled={loading}>
-              {loading && loadingSm === 1 && results.length === 0 ? <span className="spinner"></span> : "📝"} 1학기 생성
+              {loading && loadingSm === 1 ? <span className="spinner"></span> : "📝"} 1학기 생성
             </button>
             <button className="btn btn-pink" onClick={function(){generateSingle(2);}} disabled={loading}>
-              {loading && loadingSm === 2 && results.length === 0 ? <span className="spinner"></span> : "📝"} 2학기 생성
+              {loading && loadingSm === 2 ? <span className="spinner"></span> : "📝"} 2학기 생성
             </button>
           </div>
         </div>
