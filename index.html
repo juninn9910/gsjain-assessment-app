@@ -1046,7 +1046,7 @@ function PageUnit(props) {
     }
   }, []);
 
-  var filteredUnits = units.filter(function(u) { return u.bi === bi && u.sm === sm; }).sort(function(a,b) { return a.or - b.or; });
+  var filteredUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === sm; }).sort(function(a,b) { return a.or - b.or; });
 
   function addUnit() {
     var nm = uname.trim();
