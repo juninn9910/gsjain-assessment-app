@@ -567,6 +567,7 @@ function App() {
   var menus = [
     {key:"home", icon:"🏠", label:"홈"},
     {key:"class", icon:"🏫", label:"반 관리"},
+    {key:"students", icon:"👩‍🎓", label:"학생 목록"},
     {key:"subject", icon:"📚", label:"과목 관리"},
     {key:"unit", icon:"📝", label:"단원/평가기준"},
     {key:"memo", icon:"✏️", label:"단원별 메모"},
@@ -604,6 +605,7 @@ function App() {
       <div className="main">
         {page === "home" && <PageHome setPage={setPage} loadT={loadT} />}
         {page === "class" && <PageClass loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
+        {page === "students" && <PageStudents loadT={loadT} />}
         {page === "subject" && <PageSubject loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
         {page === "unit" && <PageUnit loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
         {page === "memo" && <PageMemo loadT={loadT} saveT={saveT} toast={toast} />}
@@ -822,6 +824,16 @@ function PageHome(props) {
           <div className="home-card-cta">관리하기 →</div>
         </button>
 
+        <button className="home-card-rich glass" onClick={function() { props.setPage("students"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">👩‍🎓</span>
+            <span className="home-card-chip">{students.length}명</span>
+          </div>
+          <div className="home-card-title">학생 목록</div>
+          <div className="home-card-desc">전체 학생을 반별로 조회하고 검색합니다.</div>
+          <div className="home-card-cta">조회하기 →</div>
+        </button>
+
         <button className="home-card-rich glass" onClick={function() { props.setPage("subject"); }}>
           <div className="home-card-head">
             <span className="home-card-emoji">📚</span>
@@ -867,6 +879,91 @@ function PageHome(props) {
 }
 
 /* ============================
+   STUDENTS LIST (전체 학생 목록)
+   ============================ */
+function PageStudents(props) {
+  var classes = props.loadT("c");
+  var students = props.loadT("s");
+  var _filterCi = useState("");
+  var filterCi = _filterCi[0], setFilterCi = _filterCi[1];
+  var _search = useState("");
+  var search = _search[0], setSearch = _search[1];
+
+  var filtered = students.filter(function(s) {
+    if (filterCi && s.ci !== filterCi) return false;
+    if (search) {
+      var q = search.trim().toLowerCase();
+      if (s.na.toLowerCase().indexOf(q) < 0 && String(s.nu).indexOf(q) < 0) return false;
+    }
+    return true;
+  }).sort(function(a, b) {
+    /* 반 이름순 → 번호순 */
+    var ca = classes.find(function(c) { return c.id === a.ci; });
+    var cb = classes.find(function(c) { return c.id === b.ci; });
+    var na = ca ? ca.n : "";
+    var nb = cb ? cb.n : "";
+    if (na !== nb) return na < nb ? -1 : 1;
+    return a.nu - b.nu;
+  });
+
+  function getClassName(cid) {
+    var c = classes.find(function(c) { return c.id === cid; });
+    return c ? c.n : "";
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">👩‍🎓</span>전체 학생 목록</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center" style={{flexWrap:"wrap"}}>
+          <select value={filterCi} onChange={function(e){setFilterCi(e.target.value);}} style={{width:180}}>
+            <option value="">전체 반</option>
+            {classes.map(function(c) {
+              return <option key={c.id} value={c.id}>{c.n}</option>;
+            })}
+          </select>
+          <input type="text" placeholder="이름 또는 번호 검색" value={search} onChange={function(e){setSearch(e.target.value);}} style={{flex:1, maxWidth:240}} />
+          <span className="tag">{filtered.length}명</span>
+        </div>
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">등록된 학생이 없습니다.</p>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="glass" style={{padding:0, overflow:"hidden"}}>
+          <table style={{width:"100%", borderCollapse:"collapse", fontSize:14}}>
+            <thead>
+              <tr style={{background:"rgba(236,72,153,0.06)", textAlign:"left"}}>
+                <th style={{padding:"12px 16px", fontWeight:700}}>반</th>
+                <th style={{padding:"12px 8px", fontWeight:700, width:50, textAlign:"center"}}>번호</th>
+                <th style={{padding:"12px 16px", fontWeight:700}}>이름</th>
+                <th style={{padding:"12px 16px", fontWeight:700}}>특성</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(function(s) {
+                return (
+                  <tr key={s.id} style={{borderTop:"1px solid var(--card-border)"}}>
+                    <td style={{padding:"10px 16px"}}><span className="tag">{getClassName(s.ci)}</span></td>
+                    <td style={{padding:"10px 8px", textAlign:"center", fontWeight:600}}>{s.nu}</td>
+                    <td style={{padding:"10px 16px", fontWeight:500}}>{s.na}</td>
+                    <td style={{padding:"10px 16px", fontSize:13, color:"var(--text-sub)"}}>{s.ch || "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================
    CLASS MANAGEMENT
    ============================ */
 function PageClass(props) {
@@ -894,6 +991,8 @@ function PageClass(props) {
   var editStuNum = _editStuNum[0], setEditStuNum = _editStuNum[1];
   var _editStuName = useState("");
   var editStuName = _editStuName[0], setEditStuName = _editStuName[1];
+  var _addingCid = useState(null);  /* 학생 추가 중인 반 ID */
+  var addingCid = _addingCid[0], setAddingCid = _addingCid[1];
 
   function addClass() {
     if (!level || !grade || !cnum) { props.toast("학교급·학년·반을 모두 선택하세요"); return; }
@@ -952,7 +1051,13 @@ function PageClass(props) {
     var nw = students.concat([{id: uid(), ci: cid, na: nm, nu: nu, ch: ""}]);
     props.saveT("s", nw); setStudents(nw);
     setSname(""); setSnum("");
+    /* 입력란은 열어둠 — 연속 추가 편의 */
     props.toast(nm + " 추가 완료");
+  }
+
+  function openAddStudent(cid) {
+    setAddingCid(cid);
+    setSnum(""); setSname("");
   }
 
   function deleteStudent(sid) {
@@ -1085,12 +1190,19 @@ function PageClass(props) {
               )}
 
               {/* Add student */}
-              <div className="flex gap-8 mt-12" style={{paddingLeft:8}}>
-                <input type="number" placeholder="번호" value={snum} onChange={function(e){setSnum(e.target.value);}} style={{width:70}} min="1" max="30" />
-                <input type="text" placeholder="이름" value={sname} onChange={function(e){setSname(e.target.value);}} style={{flex:1}}
-                  onKeyDown={function(e) { if (e.key === "Enter") addStudent(cl.id); }} />
-                <button className="btn btn-mint btn-sm" onClick={function() { addStudent(cl.id); }}>추가</button>
-              </div>
+              {addingCid === cl.id ? (
+                <div className="flex gap-8 mt-12" style={{paddingLeft:8}}>
+                  <input type="number" placeholder="번호" value={snum} onChange={function(e){setSnum(e.target.value);}} style={{width:70}} min="1" max="30" />
+                  <input type="text" placeholder="이름" value={sname} onChange={function(e){setSname(e.target.value);}} style={{flex:1}}
+                    onKeyDown={function(e) { if (e.key === "Enter") addStudent(cl.id); }} />
+                  <button className="btn btn-mint btn-sm" onClick={function() { addStudent(cl.id); }}>추가</button>
+                  <button className="btn btn-ghost btn-sm" onClick={function() { setAddingCid(null); }}>닫기</button>
+                </div>
+              ) : (
+                <div className="mt-12" style={{paddingLeft:8}}>
+                  <button className="btn btn-ghost btn-sm" onClick={function() { openAddStudent(cl.id); }}>+ 학생 추가</button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1597,12 +1709,60 @@ function PageAI(props) {
   var loading = _loading[0], setLoading = _loading[1];
   var _loadingSm = useState(0);  /* 현재 생성 중인 학기 (1 또는 2), 0이면 대기 */
   var loadingSm = _loadingSm[0], setLoadingSm = _loadingSm[1];
+  var _volMode = useState("default");  /* "tiny" | "short" | "default" */
+  var volMode = _volMode[0], setVolMode = _volMode[1];
+
+  /* 분량 모드별 설정 */
+  var VOL_CONFIG = {
+    tiny:    {label: "아주 적게", desc: "40자 이하 (약 80바이트)", minB: 40, maxB: 80, chars: "20~40자"},
+    short:   {label: "적게", desc: "80자 이하 (약 160바이트)", minB: 80, maxB: 160, chars: "40~80자"},
+    "default": {label: "기본", desc: "500~650바이트 (약 250~325자)", minB: 500, maxB: 650, chars: "250~325자"}
+  };
+  var vol = VOL_CONFIG[volMode];
+
+  /* AI 결과 저장/불러오기 */
+  function aiResultKey() { return "ai_" + bi; }
+  function loadSavedResults(subjectId) {
+    if (!subjectId) return [];
+    var saved = props.loadT("ai_" + subjectId);
+    return saved && saved.length > 0 ? saved : [];
+  }
+
+  /* results 변경 시 자동 저장 */
+  useEffect(function() {
+    if (bi && results.length > 0) {
+      props.saveT("ai_" + bi, results);
+    }
+  }, [results, bi]);
+
+  /* 과목 변경 시 저장된 결과 불러오기 */
+  function onSubjectChange(newBi) {
+    setBi(newBi);
+    setSi("");
+    if (newBi) {
+      var saved = loadSavedResults(newBi);
+      setResults(saved);
+    } else {
+      setResults([]);
+    }
+  }
 
   var selectedSub = subjects.find(function(s) { return s.id === bi; });
   var subCids = selectedSub ? (selectedSub.cis || (selectedSub.ci ? [selectedSub.ci] : [])) : [];
   var classStudents = selectedSub ? allStudents.filter(function(s) { return subCids.indexOf(s.ci) >= 0; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
 
-  var SYSTEM_PROMPT = "당신은 특수학교 교과학습발달상황 작성 전문가입니다. 통지표에 그대로 나가는 공식 기록이므로 다음 원칙을 엄격히 지킵니다.\n\n[1. 문장 종결 — 완결형 명사형]\n- 모든 문장은 '~함', '~임'으로 끝낸다. 진행형 '~하고 있음'은 절대 금지.\n  - (X) 관찰하고 있음 → (O) 관찰함\n  - (X) 참여함을 보임 → (O) 참여함\n\n[2. 관찰자 시점 금지 — 학생 주체 능동형]\n- '~보임', '~것으로 나타남', '~모습이 관찰됨' 등 관찰자 시점 표현 전면 금지.\n- 학생을 주어로 한 능동형 동사로만 기술한다: 관찰함, 탐색함, 응시함, 선택함, 표현함, 구분함, 조작함, 참여함, 경험함, 접촉함, 시도함, 수행함, 완성함 등.\n  - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n  - (X) 집중하는 모습이 관찰됨 → (O) 끝까지 집중하여 과제를 완성함\n\n[3. 부정 서술 배제 — 할 수 있는 것 중심]\n- '부족함', '미흡함', '어려워함', '못함', '하지 못함' 등 학생의 결손·결핍을 드러내는 서술 금지.\n- 학생이 실제로 수행한 것, 도달한 수준, 참여한 활동을 중심으로 긍정적으로 기술.\n- '하' 수준 학생도 참여·경험·접촉·탐색·반응 등 능동적 행동이 있으므로, 그 행동을 주어로 삼아 서술.\n  - (X) 덧셈을 어려워하나 단순 수세기는 가능함 → (O) 10 이내의 수를 세고 구체물을 수 순서에 맞게 배열함\n\n[4. 교사 개입 표현 처리 — 기본 제거, 불가피 시 '촉진']\n- 원칙적으로 '교사의 도움을 받아', '교사와 함께', '신체적 보조', '교사가 손을 잡고' 등 교사 개입 문구는 전부 삭제하고, 학생이 최종적으로 수행한 행동만 기술한다.\n  - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n  - (X) 교사와 함께 색칠함 → (O) 색연필로 도형 안을 색칠함\n- 도움을 빼면 서술이 성립하지 않는 경우에만 예외적으로 '~ 촉진'이라는 전문 용어로 바꿔 사용 가능: '신체적 촉진', '언어적 촉진', '시각적 촉진', '몸짓 촉진' 등. 단, 남용 금지.\n  - (X) 교사의 도움을 받아 숟가락을 잡음 → (O) 신체적 촉진을 통해 숟가락을 바르게 쥐고 음식물을 입으로 옮김\n\n[5. 상호명·외래어 순화]\n- 특정 상호·브랜드명 사용 금지. 일반 명사로 대체.\n  - 유튜브 → 동영상 공유 서비스 / 카카오톡 → 메신저 / 네이버 → 포털 사이트\n- 외래어·외국어 표현은 되도록 사용하지 않고 우리말로 순화한다. 일반적으로 통용되는 우리말이 있는 경우 반드시 우리말을 우선 사용.\n  - (X) 컬러 → (O) 색깔 / (X) 체크함 → (O) 확인함 / (X) 미션 → (O) 과제\n  - (X) 테이블 → (O) 책상 / (X) 스티커 → (O) 붙임 딱지 / (X) 게임 → (O) 놀이\n  - 단, 해당 우리말 표현이 어색하거나 해당 맥락에서 뜻이 불분명한 경우에 한해 외래어 허용.\n\n[6. 내용 구성 — 평가기준 골격 + 메모 구체화]\n- 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼는다.\n- 교사 메모의 구체적 행동·수행 내용을 자연스럽게 녹여 서술한다.\n- 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n- 학생 특성을 고려해 서술의 톤과 초점을 조절한다.\n- 학생마다 표현·어휘·문장 구성을 다르게 하여 기계적 반복을 피한다.\n\n[7. 분량 — EUC-KR 기준 500~650바이트 엄수]\n- 반드시 500~650바이트 이내 (한글 약 250~325자).\n- 650바이트 절대 초과 금지. 650바이트에 가까울수록 좋음.\n- 불필요한 수식어·중복 표현 제거. 핵심 행동과 도달 수준 중심으로 압축.\n\n[8. 출력 형식]\n- 서두·마무리 인사 없이 본문 서술만 출력한다.\n- '다음과 같음', '아래와 같이', '정리하면' 등 메타 문구 금지.\n- 제목, 불릿, 번호, 줄바꿈 구분 없이 하나의 서술 문단으로 출력한다.";
+  function getSystemPrompt() {
+    var volRule = "";
+    if (volMode === "tiny") {
+      volRule = "[7. 분량 — 아주 짧게]\n- 1~2문장, 띄어쓰기 포함 40자(약 80바이트) 이하로 매우 간결하게 작성.\n- 핵심 수행 결과 1가지만 압축하여 기술. 수식어 완전 배제.";
+    } else if (volMode === "short") {
+      volRule = "[7. 분량 — 짧게]\n- 2~3문장, 띄어쓰기 포함 80자(약 160바이트) 이하로 간결하게 작성.\n- 핵심 수행 결과 2~3가지를 압축하여 기술.";
+    } else {
+      volRule = "[7. 분량 — EUC-KR 기준 500~650바이트 엄수]\n- 반드시 500~650바이트 이내 (한글 약 250~325자).\n- 650바이트 절대 초과 금지. 650바이트에 가까울수록 좋음.\n- 불필요한 수식어·중복 표현 제거. 핵심 행동과 도달 수준 중심으로 압축.";
+    }
+
+    return "당신은 특수학교 교과학습발달상황 작성 전문가입니다. 통지표에 그대로 나가는 공식 기록이므로 다음 원칙을 엄격히 지킵니다.\n\n[1. 문장 종결 — 완결형 명사형]\n- 모든 문장은 '~함', '~임'으로 끝낸다. 진행형 '~하고 있음'은 절대 금지.\n  - (X) 관찰하고 있음 → (O) 관찰함\n  - (X) 참여함을 보임 → (O) 참여함\n\n[2. 관찰자 시점 금지 — 학생 주체 능동형]\n- '~보임', '~것으로 나타남', '~모습이 관찰됨' 등 관찰자 시점 표현 전면 금지.\n- 학생을 주어로 한 능동형 동사로만 기술한다: 관찰함, 탐색함, 응시함, 선택함, 표현함, 구분함, 조작함, 참여함, 경험함, 접촉함, 시도함, 수행함, 완성함 등.\n  - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n  - (X) 집중하는 모습이 관찰됨 → (O) 끝까지 집중하여 과제를 완성함\n\n[3. 부정 서술 배제 — 할 수 있는 것 중심]\n- '부족함', '미흡함', '어려워함', '못함', '하지 못함' 등 학생의 결손·결핍을 드러내는 서술 금지.\n- 학생이 실제로 수행한 것, 도달한 수준, 참여한 활동을 중심으로 긍정적으로 기술.\n- '하' 수준 학생도 참여·경험·접촉·탐색·반응 등 능동적 행동이 있으므로, 그 행동을 주어로 삼아 서술.\n  - (X) 덧셈을 어려워하나 단순 수세기는 가능함 → (O) 10 이내의 수를 세고 구체물을 수 순서에 맞게 배열함\n\n[4. 교사 개입 표현 처리 — 기본 제거, 불가피 시 '촉진']\n- 원칙적으로 '교사의 도움을 받아', '교사와 함께', '신체적 보조', '교사가 손을 잡고' 등 교사 개입 문구는 전부 삭제하고, 학생이 최종적으로 수행한 행동만 기술한다.\n  - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n  - (X) 교사와 함께 색칠함 → (O) 색연필로 도형 안을 색칠함\n- 도움을 빼면 서술이 성립하지 않는 경우에만 예외적으로 '~ 촉진'이라는 전문 용어로 바꿔 사용 가능: '신체적 촉진', '언어적 촉진', '시각적 촉진', '몸짓 촉진' 등. 단, 남용 금지.\n  - (X) 교사의 도움을 받아 숟가락을 잡음 → (O) 신체적 촉진을 통해 숟가락을 바르게 쥐고 음식물을 입으로 옮김\n\n[5. 상호명·외래어 순화]\n- 특정 상호·브랜드명 사용 금지. 일반 명사로 대체.\n  - 유튜브 → 동영상 공유 서비스 / 카카오톡 → 메신저 / 네이버 → 포털 사이트\n- 외래어·외국어 표현은 되도록 사용하지 않고 우리말로 순화한다. 일반적으로 통용되는 우리말이 있는 경우 반드시 우리말을 우선 사용.\n  - (X) 컬러 → (O) 색깔 / (X) 체크함 → (O) 확인함 / (X) 미션 → (O) 과제\n  - (X) 테이블 → (O) 책상 / (X) 스티커 → (O) 붙임 딱지 / (X) 게임 → (O) 놀이\n  - 단, 해당 우리말 표현이 어색하거나 해당 맥락에서 뜻이 불분명한 경우에 한해 외래어 허용.\n\n[6. 내용 구성 — 평가기준 골격 + 메모 구체화]\n- 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼는다.\n- 교사 메모의 구체적 행동·수행 내용을 자연스럽게 녹여 서술한다.\n- 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n- 학생 특성을 고려해 서술의 톤과 초점을 조절한다.\n- 학생마다 표현·어휘·문장 구성을 다르게 하여 기계적 반복을 피한다.\n\n" + volRule + "\n\n[8. 출력 형식]\n- 서두·마무리 인사 없이 본문 서술만 출력한다.\n- '다음과 같음', '아래와 같이', '정리하면' 등 메타 문구 금지.\n- 제목, 불릿, 번호, 줄바꿈 구분 없이 하나의 서술 문단으로 출력한다.";
+  }
 
   function buildPrompt(student, semester) {
     var subUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === semester; }).sort(function(a,b) { return a.or - b.or; });
@@ -1630,7 +1790,15 @@ function PageAI(props) {
       lines.push("");
     });
 
-    lines.push("위 자료로 " + semester + "학기 교과학습발달상황을 작성. EUC-KR 기준 500~650바이트 이내 엄수.");
+    var volInstruction = "";
+    if (volMode === "tiny") {
+      volInstruction = "위 자료로 " + semester + "학기 교과학습발달상황을 작성. 띄어쓰기 포함 40자 이하, 1~2문장으로 매우 간결하게.";
+    } else if (volMode === "short") {
+      volInstruction = "위 자료로 " + semester + "학기 교과학습발달상황을 작성. 띄어쓰기 포함 80자 이하, 2~3문장으로 간결하게.";
+    } else {
+      volInstruction = "위 자료로 " + semester + "학기 교과학습발달상황을 작성. EUC-KR 기준 500~650바이트 이내 엄수.";
+    }
+    lines.push(volInstruction);
     return lines.join("\n");
   }
 
@@ -1646,7 +1814,7 @@ function PageAI(props) {
       body: JSON.stringify({
         model: AI_MODEL,
         max_tokens: 800,
-        system: SYSTEM_PROMPT,
+        system: getSystemPrompt(),
         messages: [{role: "user", content: buildPrompt(student, semester)}]
       })
     })
@@ -1752,6 +1920,7 @@ function PageAI(props) {
 
   function clearResults() {
     setResults([]);
+    if (bi) props.saveT("ai_" + bi, []);
     props.toast("결과를 모두 지웠습니다");
   }
 
@@ -1790,8 +1959,8 @@ function PageAI(props) {
 
   function renderResultCard(r) {
     var bytes = countBytes(r.text);
-    var over = bytes > BYTE_MAX;
-    var under = bytes < BYTE_MIN && !r.text.startsWith("[");
+    var over = bytes > vol.maxB;
+    var under = bytes < vol.minB && !r.text.startsWith("[");
     return (
       <div key={r.id + "-" + r.sm} className="ai-result-card glass">
         <div className="flex items-center justify-between">
@@ -1805,9 +1974,9 @@ function PageAI(props) {
         <textarea value={r.text} onChange={function(e) { updateResultText(r.id, r.sm, e.target.value); }} />
         <div className="flex items-center justify-between" style={{fontSize:12, marginTop:4}}>
           <span style={{color: over ? "#e11d48" : (under ? "#d97706" : "#059669"), fontWeight:600}}>
-            {bytes} / {BYTE_MAX} 바이트 {over ? "⚠ 초과" : (under ? "(분량 부족)" : "✓")}
+            {bytes} / {vol.maxB} 바이트 {over ? "⚠ 초과" : (under ? "(분량 부족)" : "✓")}
           </span>
-          <span className="text-sub">권장 {BYTE_MIN}~{BYTE_MAX}바이트 (EUC-KR)</span>
+          <span className="text-sub">권장 {vol.minB}~{vol.maxB}바이트</span>
         </div>
       </div>
     );
@@ -1833,7 +2002,7 @@ function PageAI(props) {
       <h2 className="section-title"><span className="emoji">🤖</span>교과학습발달상황</h2>
       <div className="glass mb-16" style={{padding:20}}>
         <div className="flex gap-8 items-center mb-12" style={{flexWrap:"wrap"}}>
-          <select value={bi} onChange={function(e){setBi(e.target.value); setSi(""); setResults([]);}} style={{width:200}}>
+          <select value={bi} onChange={function(e){onSubjectChange(e.target.value);}} style={{width:200}}>
             <option value="">과목 선택</option>
             {subjects.map(function(s) {
               var cids = s.cis || (s.ci ? [s.ci] : []);
@@ -1860,6 +2029,29 @@ function PageAI(props) {
             </span>
           </div>
         )}
+
+        {/* 분량 선택 */}
+        <div className="mb-12">
+          <p className="text-sm mb-8" style={{fontWeight:600, color:"var(--text-sub)"}}>분량 선택</p>
+          <div className="flex gap-8" style={{flexWrap:"wrap"}}>
+            <button className={"num-btn" + (volMode==="tiny" ? " active" : "")}
+              style={{width:"auto", padding:"0 16px", fontSize:13, height:38}}
+              onClick={function(){setVolMode("tiny");}}>
+              아주 적게 (40자)
+            </button>
+            <button className={"num-btn" + (volMode==="short" ? " active" : "")}
+              style={{width:"auto", padding:"0 16px", fontSize:13, height:38}}
+              onClick={function(){setVolMode("short");}}>
+              적게 (80자)
+            </button>
+            <button className={"num-btn" + (volMode==="default" ? " active" : "")}
+              style={{width:"auto", padding:"0 16px", fontSize:13, height:38}}
+              onClick={function(){setVolMode("default");}}>
+              기본 (250~325자)
+            </button>
+          </div>
+          <p className="text-sm mt-12" style={{color:"var(--text-sub)"}}>{vol.desc}</p>
+        </div>
 
         {/* 개별 생성 (학기별) */}
         <div style={{marginBottom:8}}>
@@ -1892,6 +2084,13 @@ function PageAI(props) {
         <div className="glass text-center" style={{padding:40}}>
           <div className="spinner" style={{width:32, height:32, marginBottom:12}}></div>
           <p>{loadingSm}학기 생성 중...</p>
+        </div>
+      )}
+
+      {results.length > 0 && !loading && (
+        <div className="flex items-center justify-between mb-12">
+          <span className="tag tag-mint" style={{fontSize:11}}>💾 결과 자동 저장됨 · {results.length}건</span>
+          <button className="btn btn-ghost btn-sm" onClick={clearResults}>전체 결과 초기화</button>
         </div>
       )}
 
