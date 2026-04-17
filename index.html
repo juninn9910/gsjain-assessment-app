@@ -423,8 +423,6 @@ select { cursor: pointer; }
    ============================ */
 var API_ENDPOINT = "https://anthropic-proxy-virid.vercel.app/api/claude";
 var AI_MODEL = "claude-sonnet-4-6";
-var BYTE_MIN = 500;
-var BYTE_MAX = 650;
 
 /* ============================
    UTILS
@@ -442,18 +440,6 @@ function countBytes(s) {
     n += (c > 127) ? 2 : 1;
   }
   return n;
-}
-
-/* EUC-KR 기준 바이트 제한에 맞춰 문자열 자르기 */
-function truncateByBytes(s, maxBytes) {
-  if (!s) return s;
-  var n = 0;
-  for (var i = 0; i < s.length; i++) {
-    var c = s.charCodeAt(i);
-    n += (c > 127) ? 2 : 1;
-    if (n > maxBytes) return s.substring(0, i);
-  }
-  return s;
 }
 
 function loadJSON(key, fallback) {
@@ -510,6 +496,14 @@ function App() {
     var suffixes = ["c","s","b","u","r","m"];
     var data = {_teacher: teacher, _exportedAt: new Date().toISOString()};
     suffixes.forEach(function(s) { data[s] = loadT(s); });
+    /* AI 결과도 포함 */
+    var subjects = loadT("b");
+    var aiResults = {};
+    subjects.forEach(function(sub) {
+      var aiData = loadT("ai_" + sub.id);
+      if (aiData && aiData.length > 0) aiResults[sub.id] = aiData;
+    });
+    data._ai = aiResults;
     var blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
@@ -534,6 +528,12 @@ function App() {
         suffixes.forEach(function(s) {
           if (data[s]) saveT(s, data[s]);
         });
+        /* AI 결과 복원 */
+        if (data._ai) {
+          Object.keys(data._ai).forEach(function(subId) {
+            saveT("ai_" + subId, data._ai[subId]);
+          });
+        }
         toast("데이터 복원 완료 — 페이지를 새로고침합니다");
         setTimeout(function() { location.reload(); }, 1000);
       } catch(err) {
@@ -674,9 +674,12 @@ function TeacherSelect(props) {
   }
 
   function deleteTeacher(tid) {
-    /* 해당 교사의 모든 데이터 삭제 */
+    /* 해당 교사의 모든 데이터 삭제 (ai_ 결과 포함) */
     var keys = ["c","s","b","u","r","m"];
     keys.forEach(function(k) { localStorage.removeItem("pca_" + tid + "_" + k); });
+    /* ai_ 결과 키도 삭제: pca_{tid}_ai_{과목id} */
+    var subjects = loadJSON("pca_" + tid + "_b", []);
+    subjects.forEach(function(sub) { localStorage.removeItem("pca_" + tid + "_ai_" + sub.id); });
     var nw = props.teachers.filter(function(t) { return t.id !== tid; });
     props.saveTeachers(nw);
     setConfirmDelete(null);
@@ -1266,7 +1269,7 @@ function PageSubject(props) {
   function deleteSubject(sid) {
     var sub = subjects.find(function(s) { return s.id === sid; });
     props.setModal({
-      msg: (sub ? sub.na : "과목") + "을(를) 삭제하면 소속 단원이 모두 삭제됩니다.",
+      msg: (sub ? sub.na : "과목") + "을(를) 삭제하면 소속 단원과 AI 결과가 모두 삭제됩니다.",
       onConfirm: function() {
         var ns = subjects.filter(function(s) { return s.id !== sid; });
         props.saveT("b", ns); setSubjects(ns);
@@ -1277,6 +1280,8 @@ function PageSubject(props) {
         props.saveT("r", rubrics.filter(function(r) { return delUids.indexOf(r.ui) < 0; }));
         var memos = props.loadT("m");
         props.saveT("m", memos.filter(function(m) { return delUids.indexOf(m.ui) < 0; }));
+        /* AI 결과 삭제 */
+        props.saveT("ai_" + sid, []);
         props.toast("삭제 완료");
       }
     });
