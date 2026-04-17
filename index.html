@@ -888,6 +888,12 @@ function PageClass(props) {
   var editChar = _editChar[0], setEditChar = _editChar[1];
   var _charText = useState("");
   var charText = _charText[0], setCharText = _charText[1];
+  var _editStudent = useState(null);  /* 학생 정보 편집 중 ID */
+  var editStudent = _editStudent[0], setEditStudent = _editStudent[1];
+  var _editStuNum = useState("");
+  var editStuNum = _editStuNum[0], setEditStuNum = _editStuNum[1];
+  var _editStuName = useState("");
+  var editStuName = _editStuName[0], setEditStuName = _editStuName[1];
 
   function addClass() {
     if (!level || !grade || !cnum) { props.toast("학교급·학년·반을 모두 선택하세요"); return; }
@@ -902,16 +908,28 @@ function PageClass(props) {
 
   function deleteClass(cid) {
     props.setModal({
-      msg: "반을 삭제하면 소속 학생·과목·단원이 모두 삭제됩니다.",
+      msg: "반을 삭제하면 소속 학생이 삭제되고, 해당 반만 연결된 과목·단원도 삭제됩니다.",
       onConfirm: function() {
         var nc = classes.filter(function(c) { return c.id !== cid; });
         props.saveT("c", nc); setClasses(nc);
-        /* cascade */
+        /* cascade students */
         var ns = students.filter(function(s) { return s.ci !== cid; });
         props.saveT("s", ns); setStudents(ns);
+        /* cascade subjects: 다중 반 지원 — 해당 반을 cis에서 제거, cis가 빈 배열이면 과목 삭제 */
         var subjects = props.loadT("b");
-        var delSubIds = subjects.filter(function(b) { return b.ci === cid; }).map(function(b) { return b.id; });
-        props.saveT("b", subjects.filter(function(b) { return b.ci !== cid; }));
+        var updatedSubs = [];
+        var delSubIds = [];
+        subjects.forEach(function(b) {
+          var cids = b.cis || (b.ci ? [b.ci] : []);
+          var remaining = cids.filter(function(c) { return c !== cid; });
+          if (remaining.length === 0) {
+            delSubIds.push(b.id);
+          } else {
+            updatedSubs.push(Object.assign({}, b, {cis: remaining, ci: undefined}));
+          }
+        });
+        props.saveT("b", updatedSubs);
+        /* cascade units/rubrics/memos for deleted subjects */
         var units = props.loadT("u");
         var delUnitIds = units.filter(function(u) { return delSubIds.indexOf(u.bi) >= 0; }).map(function(u) { return u.id; });
         props.saveT("u", units.filter(function(u) { return delSubIds.indexOf(u.bi) < 0; }));
@@ -966,6 +984,29 @@ function PageClass(props) {
     props.toast("특성 저장 완료");
   }
 
+  function startEditStudent(st) {
+    setEditStudent(st.id);
+    setEditStuNum(String(st.nu));
+    setEditStuName(st.na);
+  }
+
+  function saveEditStudent(cid) {
+    var nu = parseInt(editStuNum);
+    var nm = editStuName.trim();
+    if (!nu || !nm) { props.toast("번호와 이름을 입력하세요"); return; }
+    /* 같은 반에서 다른 학생과 번호 중복 방지 */
+    if (students.some(function(s) { return s.ci === cid && s.nu === nu && s.id !== editStudent; })) {
+      props.toast("이미 사용 중인 번호입니다"); return;
+    }
+    var ns = students.map(function(s) {
+      if (s.id === editStudent) return Object.assign({}, s, {nu: nu, na: nm});
+      return s;
+    });
+    props.saveT("s", ns); setStudents(ns);
+    setEditStudent(null);
+    props.toast("학생 정보 수정 완료");
+  }
+
   return (
     <div>
       <h2 className="section-title"><span className="emoji">🏫</span>반 관리</h2>
@@ -1009,10 +1050,22 @@ function PageClass(props) {
 
               {/* Student list */}
               {clStudents.map(function(st) {
+                if (editStudent === st.id) {
+                  return (
+                    <div key={st.id} className="flex items-center gap-8 mb-8" style={{paddingLeft:8}}>
+                      <input type="number" value={editStuNum} onChange={function(e){setEditStuNum(e.target.value);}} style={{width:60}} min="1" max="30" />
+                      <input type="text" value={editStuName} onChange={function(e){setEditStuName(e.target.value);}} style={{flex:1}}
+                        onKeyDown={function(e) { if (e.key === "Enter") saveEditStudent(cl.id); }} />
+                      <button className="btn btn-pink btn-sm" onClick={function() { saveEditStudent(cl.id); }}>저장</button>
+                      <button className="btn btn-ghost btn-sm" onClick={function(){setEditStudent(null);}}>취소</button>
+                    </div>
+                  );
+                }
                 return (
                   <div key={st.id} className="flex items-center gap-8 mb-8" style={{paddingLeft:8}}>
                     <span className="tag" style={{minWidth:32, textAlign:"center"}}>{st.nu}</span>
                     <span style={{fontWeight:500, flex:1}}>{st.na}</span>
+                    <button className="btn btn-ghost btn-sm" style={{padding:"4px 8px", fontSize:11}} onClick={function() { startEditStudent(st); }}>✏️</button>
                     <button className="btn btn-ghost btn-sm" onClick={function() { openChar(st.id); }}>특성</button>
                     <button className="btn btn-red btn-sm" onClick={function() { deleteStudent(st.id); }}>삭제</button>
                   </div>
@@ -1053,20 +1106,48 @@ function PageSubject(props) {
   var _sub = useState(function() { return props.loadT("b"); });
   var subjects = _sub[0], setSubjects = _sub[1];
   var classes = props.loadT("c");
-  var _ci = useState("");
-  var ci = _ci[0], setCi = _ci[1];
+  var _selCids = useState([]);  /* 선택된 반 ID 배열 */
+  var selCids = _selCids[0], setSelCids = _selCids[1];
   var _name = useState("");
   var name = _name[0], setName = _name[1];
 
+  /* 과목 마이그레이션: ci → cis (하위 호환) */
+  useEffect(function() {
+    var needMigrate = subjects.some(function(s) { return s.ci && !s.cis; });
+    if (needMigrate) {
+      var migrated = subjects.map(function(s) {
+        if (s.ci && !s.cis) return Object.assign({}, s, {cis: [s.ci], ci: undefined});
+        return s;
+      });
+      props.saveT("b", migrated);
+      setSubjects(migrated);
+    }
+  }, []);
+
+  /* 과목의 반 ID 배열 가져오기 (하위 호환) */
+  function getSubCids(sub) {
+    if (sub.cis) return sub.cis;
+    if (sub.ci) return [sub.ci];
+    return [];
+  }
+
+  function toggleCid(cid) {
+    setSelCids(function(prev) {
+      if (prev.indexOf(cid) >= 0) return prev.filter(function(c) { return c !== cid; });
+      return prev.concat([cid]);
+    });
+  }
+
   function addSubject() {
     var nm = name.trim();
-    if (!ci || !nm) { props.toast("반과 과목명을 입력하세요"); return; }
-    if (subjects.some(function(s) { return s.ci === ci && s.na === nm; })) {
-      props.toast("이미 등록된 과목입니다"); return;
+    if (selCids.length === 0 || !nm) { props.toast("반을 선택하고 과목명을 입력하세요"); return; }
+    /* 같은 이름의 과목이 같은 반 조합으로 이미 있는지 (이름만 체크) */
+    if (subjects.some(function(s) { return s.na === nm; })) {
+      props.toast("이미 등록된 과목명입니다"); return;
     }
-    var nw = subjects.concat([{id: uid(), na: nm, ci: ci}]);
+    var nw = subjects.concat([{id: uid(), na: nm, cis: selCids.slice()}]);
     props.saveT("b", nw); setSubjects(nw);
-    setName("");
+    setName(""); setSelCids([]);
     props.toast(nm + " 추가 완료");
   }
 
@@ -1089,35 +1170,53 @@ function PageSubject(props) {
     });
   }
 
-  function getClassName(cid) {
-    var c = classes.find(function(c) { return c.id === cid; });
-    return c ? c.n : "";
+  function getClassNames(sub) {
+    var cids = getSubCids(sub);
+    return cids.map(function(cid) {
+      var c = classes.find(function(c) { return c.id === cid; });
+      return c ? c.n : "";
+    }).filter(Boolean).join(", ");
   }
 
   return (
     <div>
       <h2 className="section-title"><span className="emoji">📚</span>과목 관리</h2>
       <div className="glass mb-16" style={{padding:20}}>
+        <p style={{fontWeight:600, marginBottom:8}}>담당 반 선택 (복수 선택 가능)</p>
+        <div className="num-btn-group mb-12">
+          {classes.map(function(c) {
+            var isSelected = selCids.indexOf(c.id) >= 0;
+            return (
+              <button key={c.id} className={"num-btn" + (isSelected ? " active" : "")}
+                style={{width:"auto", padding:"0 14px", fontSize:13, height:40}}
+                onClick={function() { toggleCid(c.id); }}>
+                {c.n}
+              </button>
+            );
+          })}
+        </div>
         <div className="flex gap-8 items-center">
-          <select value={ci} onChange={function(e){setCi(e.target.value);}} style={{width:180}}>
-            <option value="">담당 반 선택</option>
-            {classes.map(function(c) {
-              return <option key={c.id} value={c.id}>{c.n}</option>;
-            })}
-          </select>
           <input type="text" placeholder="과목명" value={name} onChange={function(e){setName(e.target.value);}} style={{flex:1}}
             onKeyDown={function(e) { if (e.key === "Enter") addSubject(); }} />
           <button className="btn btn-pink" onClick={addSubject}>추가</button>
         </div>
+        {selCids.length > 0 && (
+          <p className="text-sm mt-12" style={{color:"var(--pink)"}}>
+            선택: {selCids.map(function(cid) { var c = classes.find(function(c) { return c.id === cid; }); return c ? c.n : ""; }).join(", ")}
+          </p>
+        )}
       </div>
       <div className="card-list">
         {subjects.map(function(sub) {
           return (
             <div key={sub.id} className="card-item glass">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-8">
+                <div className="flex items-center gap-8" style={{flexWrap:"wrap"}}>
                   <span style={{fontWeight:600}}>{sub.na}</span>
-                  <span className="tag">{getClassName(sub.ci)}</span>
+                  {getSubCids(sub).map(function(cid) {
+                    var c = classes.find(function(c) { return c.id === cid; });
+                    return c ? <span key={cid} className="tag">{c.n}</span> : null;
+                  })}
                 </div>
                 <button className="btn btn-red btn-sm" onClick={function() { deleteSubject(sub.id); }}>삭제</button>
               </div>
@@ -1195,6 +1294,23 @@ function PageUnit(props) {
     });
   }
 
+  function moveUnit(uid2, direction) {
+    /* direction: -1 (위로), +1 (아래로) */
+    var idx = filteredUnits.findIndex(function(u) { return u.id === uid2; });
+    if (idx < 0) return;
+    var swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= filteredUnits.length) return;
+    var thisUnit = filteredUnits[idx];
+    var swapUnit = filteredUnits[swapIdx];
+    /* or 값 교환 */
+    var nw = units.map(function(u) {
+      if (u.id === thisUnit.id) return Object.assign({}, u, {or: swapUnit.or});
+      if (u.id === swapUnit.id) return Object.assign({}, u, {or: thisUnit.or});
+      return u;
+    });
+    props.saveT("u", nw); setUnits(nw);
+  }
+
   function openRubric(uid2) {
     setEditUid(uid2);
     var r = rubrics.find(function(r) { return r.ui === uid2; });
@@ -1248,11 +1364,17 @@ function PageUnit(props) {
       </div>
 
       <div className="card-list">
-        {filteredUnits.map(function(u) {
+        {filteredUnits.map(function(u, idx) {
           return (
             <div key={u.id} className="card-item glass">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-8">
+                  <div className="flex-col" style={{gap:2, display:"flex"}}>
+                    <button className="btn btn-ghost" style={{padding:"2px 6px", fontSize:10, lineHeight:1}}
+                      disabled={idx === 0} onClick={function() { moveUnit(u.id, -1); }}>▲</button>
+                    <button className="btn btn-ghost" style={{padding:"2px 6px", fontSize:10, lineHeight:1}}
+                      disabled={idx === filteredUnits.length - 1} onClick={function() { moveUnit(u.id, 1); }}>▼</button>
+                  </div>
                   <span style={{fontWeight:600}}>{u.na}</span>
                   {hasRubric(u.id) ? <span className="tag tag-mint">✓ 등록됨</span> : <span className="tag tag-red">✗ 미등록</span>}
                 </div>
@@ -1314,7 +1436,8 @@ function PageMemo(props) {
   var savedAt = _savedAt[0], setSavedAt = _savedAt[1];
 
   var selectedSub = subjects.find(function(s) { return s.id === bi; });
-  var classStudents = selectedSub ? allStudents.filter(function(s) { return s.ci === selectedSub.ci; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
+  var subCids = selectedSub ? (selectedSub.cis || (selectedSub.ci ? [selectedSub.ci] : [])) : [];
+  var classStudents = selectedSub ? allStudents.filter(function(s) { return subCids.indexOf(s.ci) >= 0; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
   var selectedStudent = allStudents.find(function(s) { return s.id === si; });
   var filteredUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === sm; }).sort(function(a,b) { return a.or - b.or; });
 
@@ -1357,8 +1480,9 @@ function PageMemo(props) {
           <select value={bi} onChange={onSubjectChange} style={{width:200}}>
             <option value="">과목 선택</option>
             {subjects.map(function(s) {
-              var cl = classes.find(function(c) { return c.id === s.ci; });
-              return <option key={s.id} value={s.id}>{s.na} ({cl ? cl.n : ""})</option>;
+              var cids = s.cis || (s.ci ? [s.ci] : []);
+              var clNames = cids.map(function(cid) { var c = classes.find(function(c) { return c.id === cid; }); return c ? c.n : ""; }).filter(Boolean).join(", ");
+              return <option key={s.id} value={s.id}>{s.na} ({clNames || "미연결"})</option>;
             })}
           </select>
           <div className="flex gap-8">
@@ -1475,7 +1599,8 @@ function PageAI(props) {
   var loadingSm = _loadingSm[0], setLoadingSm = _loadingSm[1];
 
   var selectedSub = subjects.find(function(s) { return s.id === bi; });
-  var classStudents = selectedSub ? allStudents.filter(function(s) { return s.ci === selectedSub.ci; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
+  var subCids = selectedSub ? (selectedSub.cis || (selectedSub.ci ? [selectedSub.ci] : [])) : [];
+  var classStudents = selectedSub ? allStudents.filter(function(s) { return subCids.indexOf(s.ci) >= 0; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
 
   var SYSTEM_PROMPT = "당신은 특수학교 교과학습발달상황 작성 전문가입니다. 통지표에 그대로 나가는 공식 기록이므로 다음 원칙을 엄격히 지킵니다.\n\n[1. 문장 종결 — 완결형 명사형]\n- 모든 문장은 '~함', '~임'으로 끝낸다. 진행형 '~하고 있음'은 절대 금지.\n  - (X) 관찰하고 있음 → (O) 관찰함\n  - (X) 참여함을 보임 → (O) 참여함\n\n[2. 관찰자 시점 금지 — 학생 주체 능동형]\n- '~보임', '~것으로 나타남', '~모습이 관찰됨' 등 관찰자 시점 표현 전면 금지.\n- 학생을 주어로 한 능동형 동사로만 기술한다: 관찰함, 탐색함, 응시함, 선택함, 표현함, 구분함, 조작함, 참여함, 경험함, 접촉함, 시도함, 수행함, 완성함 등.\n  - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n  - (X) 집중하는 모습이 관찰됨 → (O) 끝까지 집중하여 과제를 완성함\n\n[3. 부정 서술 배제 — 할 수 있는 것 중심]\n- '부족함', '미흡함', '어려워함', '못함', '하지 못함' 등 학생의 결손·결핍을 드러내는 서술 금지.\n- 학생이 실제로 수행한 것, 도달한 수준, 참여한 활동을 중심으로 긍정적으로 기술.\n- '하' 수준 학생도 참여·경험·접촉·탐색·반응 등 능동적 행동이 있으므로, 그 행동을 주어로 삼아 서술.\n  - (X) 덧셈을 어려워하나 단순 수세기는 가능함 → (O) 10 이내의 수를 세고 구체물을 수 순서에 맞게 배열함\n\n[4. 교사 개입 표현 처리 — 기본 제거, 불가피 시 '촉진']\n- 원칙적으로 '교사의 도움을 받아', '교사와 함께', '신체적 보조', '교사가 손을 잡고' 등 교사 개입 문구는 전부 삭제하고, 학생이 최종적으로 수행한 행동만 기술한다.\n  - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n  - (X) 교사와 함께 색칠함 → (O) 색연필로 도형 안을 색칠함\n- 도움을 빼면 서술이 성립하지 않는 경우에만 예외적으로 '~ 촉진'이라는 전문 용어로 바꿔 사용 가능: '신체적 촉진', '언어적 촉진', '시각적 촉진', '몸짓 촉진' 등. 단, 남용 금지.\n  - (X) 교사의 도움을 받아 숟가락을 잡음 → (O) 신체적 촉진을 통해 숟가락을 바르게 쥐고 음식물을 입으로 옮김\n\n[5. 상호명·외래어 순화]\n- 특정 상호·브랜드명 사용 금지. 일반 명사로 대체.\n  - 유튜브 → 동영상 공유 서비스 / 카카오톡 → 메신저 / 네이버 → 포털 사이트\n- 외래어·외국어 표현은 되도록 사용하지 않고 우리말로 순화한다. 일반적으로 통용되는 우리말이 있는 경우 반드시 우리말을 우선 사용.\n  - (X) 컬러 → (O) 색깔 / (X) 체크함 → (O) 확인함 / (X) 미션 → (O) 과제\n  - (X) 테이블 → (O) 책상 / (X) 스티커 → (O) 붙임 딱지 / (X) 게임 → (O) 놀이\n  - 단, 해당 우리말 표현이 어색하거나 해당 맥락에서 뜻이 불분명한 경우에 한해 외래어 허용.\n\n[6. 내용 구성 — 평가기준 골격 + 메모 구체화]\n- 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼는다.\n- 교사 메모의 구체적 행동·수행 내용을 자연스럽게 녹여 서술한다.\n- 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n- 학생 특성을 고려해 서술의 톤과 초점을 조절한다.\n- 학생마다 표현·어휘·문장 구성을 다르게 하여 기계적 반복을 피한다.\n\n[7. 분량 — EUC-KR 기준 500~650바이트 엄수]\n- 반드시 500~650바이트 이내 (한글 약 250~325자).\n- 650바이트 절대 초과 금지. 650바이트에 가까울수록 좋음.\n- 불필요한 수식어·중복 표현 제거. 핵심 행동과 도달 수준 중심으로 압축.\n\n[8. 출력 형식]\n- 서두·마무리 인사 없이 본문 서술만 출력한다.\n- '다음과 같음', '아래와 같이', '정리하면' 등 메타 문구 금지.\n- 제목, 불릿, 번호, 줄바꿈 구분 없이 하나의 서술 문단으로 출력한다.";
 
@@ -1711,8 +1836,9 @@ function PageAI(props) {
           <select value={bi} onChange={function(e){setBi(e.target.value); setSi(""); setResults([]);}} style={{width:200}}>
             <option value="">과목 선택</option>
             {subjects.map(function(s) {
-              var cl = classes.find(function(c) { return c.id === s.ci; });
-              return <option key={s.id} value={s.id}>{s.na} ({cl ? cl.n : ""})</option>;
+              var cids = s.cis || (s.ci ? [s.ci] : []);
+              var clNames = cids.map(function(cid) { var c = classes.find(function(c) { return c.id === cid; }); return c ? c.n : ""; }).filter(Boolean).join(", ");
+              return <option key={s.id} value={s.id}>{s.na} ({clNames || "미연결"})</option>;
             })}
           </select>
           <select value={si} onChange={function(e){setSi(e.target.value);}} style={{width:160}}>
