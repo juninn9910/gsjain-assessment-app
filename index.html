@@ -505,6 +505,45 @@ function App() {
   function loadT(suffix) { return loadJSON(tKey(suffix), []); }
   function saveT(suffix, data) { saveJSON(tKey(suffix), data); }
 
+  /* 데이터 백업 (현재 교사 전체 데이터 JSON 다운로드) */
+  function exportData() {
+    var suffixes = ["c","s","b","u","r","m"];
+    var data = {_teacher: teacher, _exportedAt: new Date().toISOString()};
+    suffixes.forEach(function(s) { data[s] = loadT(s); });
+    var blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "pca_backup_" + (teacher ? teacher.name : "unknown") + "_" + new Date().toISOString().slice(0,10) + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("백업 파일 다운로드 완료");
+  }
+
+  /* 데이터 복원 (JSON 파일 업로드) */
+  function importData(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var data = JSON.parse(ev.target.result);
+        var suffixes = ["c","s","b","u","r","m"];
+        var hasData = suffixes.some(function(s) { return data[s]; });
+        if (!hasData) { toast("유효하지 않은 백업 파일입니다"); return; }
+        suffixes.forEach(function(s) {
+          if (data[s]) saveT(s, data[s]);
+        });
+        toast("데이터 복원 완료 — 페이지를 새로고침합니다");
+        setTimeout(function() { location.reload(); }, 1000);
+      } catch(err) {
+        toast("파일 읽기 오류: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";  /* 같은 파일 재선택 가능 */
+  }
+
   var teacher = teachers.find(function(t) { return t.id === teacherId; });
 
   if (!teacherId) {
@@ -551,6 +590,16 @@ function App() {
             </button>
           );
         })}
+        <div style={{flex:1}}></div>
+        <div style={{padding:"8px 12px", borderTop:"1px solid var(--card-border)", marginTop:8}}>
+          <button className="sidebar-item" style={{fontSize:13}} onClick={exportData}>
+            <span>💾</span><span>데이터 백업</span>
+          </button>
+          <label className="sidebar-item" style={{fontSize:13, cursor:"pointer"}}>
+            <span>📂</span><span>데이터 복원</span>
+            <input type="file" accept=".json" onChange={importData} style={{display:"none"}} />
+          </label>
+        </div>
       </nav>
       <div className="main">
         {page === "home" && <PageHome setPage={setPage} loadT={loadT} />}
@@ -581,6 +630,12 @@ function App() {
 function TeacherSelect(props) {
   var _n = useState("");
   var name = _n[0], setName = _n[1];
+  var _editId = useState(null);
+  var editId = _editId[0], setEditId = _editId[1];
+  var _editName = useState("");
+  var editName = _editName[0], setEditName = _editName[1];
+  var _confirmDelete = useState(null);
+  var confirmDelete = _confirmDelete[0], setConfirmDelete = _confirmDelete[1];
 
   function addTeacher() {
     var n = name.trim();
@@ -595,6 +650,37 @@ function TeacherSelect(props) {
     props.toast(n + " 선생님 등록 완료");
   }
 
+  function startEdit(t) {
+    setEditId(t.id);
+    setEditName(t.name);
+  }
+
+  function saveEdit() {
+    var n = editName.trim();
+    if (!n) return;
+    if (props.teachers.some(function(t) { return t.id !== editId && t.name === n; })) {
+      props.toast("이미 등록된 이름입니다");
+      return;
+    }
+    var nw = props.teachers.map(function(t) {
+      if (t.id === editId) return Object.assign({}, t, {name: n});
+      return t;
+    });
+    props.saveTeachers(nw);
+    setEditId(null);
+    props.toast("이름 수정 완료");
+  }
+
+  function deleteTeacher(tid) {
+    /* 해당 교사의 모든 데이터 삭제 */
+    var keys = ["c","s","b","u","r","m"];
+    keys.forEach(function(k) { localStorage.removeItem("pca_" + tid + "_" + k); });
+    var nw = props.teachers.filter(function(t) { return t.id !== tid; });
+    props.saveTeachers(nw);
+    setConfirmDelete(null);
+    props.toast("교사 삭제 완료");
+  }
+
   return (
     <div className="teacher-select-screen">
       <div className="teacher-select-box glass-strong">
@@ -603,14 +689,42 @@ function TeacherSelect(props) {
         <p className="mb-16" style={{fontWeight:600, fontSize:15}}>교사를 선택하세요</p>
         <div className="teacher-grid">
           {props.teachers.map(function(t) {
+            if (editId === t.id) {
+              return (
+                <div key={t.id} className="flex gap-8" style={{width:"100%"}}>
+                  <input type="text" value={editName} onChange={function(e){setEditName(e.target.value);}}
+                    onKeyDown={function(e) { if (e.key === "Enter") saveEdit(); }}
+                    style={{flex:1, padding:"8px 12px"}} />
+                  <button className="btn btn-pink btn-sm" onClick={saveEdit}>저장</button>
+                  <button className="btn btn-ghost btn-sm" onClick={function(){setEditId(null);}}>취소</button>
+                </div>
+              );
+            }
             return (
-              <button key={t.id} className="teacher-btn" onClick={function() { props.onSelect(t.id); }}>
-                {t.name}
-              </button>
+              <div key={t.id} style={{display:"flex", alignItems:"center", gap:6}}>
+                <button className="teacher-btn" style={{flex:1}} onClick={function() { props.onSelect(t.id); }}>
+                  {t.name}
+                </button>
+                <button className="btn btn-ghost btn-sm" style={{padding:"6px 8px", fontSize:12}} onClick={function() { startEdit(t); }}>✏️</button>
+                <button className="btn btn-red btn-sm" style={{padding:"6px 8px", fontSize:12}} onClick={function() { setConfirmDelete(t.id); }}>✕</button>
+              </div>
             );
           })}
           {props.teachers.length === 0 && <p className="text-sub text-sm">등록된 교사가 없습니다</p>}
         </div>
+
+        {/* 교사 삭제 확인 */}
+        {confirmDelete && (
+          <div style={{margin:"16px 0", padding:16, borderRadius:12, background:"rgba(251,113,133,0.1)", border:"1px solid rgba(251,113,133,0.3)"}}>
+            <p style={{fontWeight:600, marginBottom:8}}>⚠️ 정말 삭제하시겠습니까?</p>
+            <p className="text-sm text-sub" style={{marginBottom:12}}>해당 교사의 반·학생·과목·단원·메모 데이터가 모두 삭제됩니다.</p>
+            <div className="flex gap-8">
+              <button className="btn btn-red btn-sm" onClick={function() { deleteTeacher(confirmDelete); }}>삭제</button>
+              <button className="btn btn-ghost btn-sm" onClick={function() { setConfirmDelete(null); }}>취소</button>
+            </div>
+          </div>
+        )}
+
         <div className="teacher-add">
           <input type="text" placeholder="새 교사 이름" value={name} onChange={function(e) { setName(e.target.value); }}
             onKeyDown={function(e) { if (e.key === "Enter") addTeacher(); }}
@@ -760,6 +874,8 @@ function PageClass(props) {
   var classes = _cls[0], setClasses = _cls[1];
   var _stu = useState(function() { return props.loadT("s"); });
   var students = _stu[0], setStudents = _stu[1];
+  var _level = useState(null);  /* "중" 또는 "고" */
+  var level = _level[0], setLevel = _level[1];
   var _grade = useState(null);
   var grade = _grade[0], setGrade = _grade[1];
   var _cnum = useState(null);
@@ -773,17 +889,14 @@ function PageClass(props) {
   var _charText = useState("");
   var charText = _charText[0], setCharText = _charText[1];
 
-  function refreshClasses() { var d = props.loadT("c"); setClasses(d); return d; }
-  function refreshStudents() { var d = props.loadT("s"); setStudents(d); return d; }
-
   function addClass() {
-    if (!grade || !cnum) { props.toast("학년과 반을 선택하세요"); return; }
-    var n = grade + "학년 " + cnum + "반";
+    if (!level || !grade || !cnum) { props.toast("학교급·학년·반을 모두 선택하세요"); return; }
+    var n = level + " " + grade + "학년 " + cnum + "반";
     if (classes.some(function(c) { return c.n === n; })) { props.toast("이미 등록된 반입니다"); return; }
     var nw = classes.concat([{id: uid(), n: n}]);
     props.saveT("c", nw);
     setClasses(nw);
-    setGrade(null); setCnum(null);
+    setLevel(null); setGrade(null); setCnum(null);
     props.toast(n + " 추가 완료");
   }
 
@@ -859,9 +972,14 @@ function PageClass(props) {
 
       {/* Add class */}
       <div className="glass mb-16" style={{padding:20}}>
+        <p style={{fontWeight:600, marginBottom:12}}>학교급 선택</p>
+        <div className="num-btn-group mb-12">
+          <button className={"num-btn" + (level==="중"?" active":"")} style={{width:"auto", padding:"0 20px"}} onClick={function(){setLevel("중");}}>중학교</button>
+          <button className={"num-btn" + (level==="고"?" active":"")} style={{width:"auto", padding:"0 20px"}} onClick={function(){setLevel("고");}}>고등학교</button>
+        </div>
         <p style={{fontWeight:600, marginBottom:12}}>학년 선택</p>
         <div className="num-btn-group mb-12">
-          {[1,2,3,4,5,6].map(function(g) {
+          {[1,2,3].map(function(g) {
             return <button key={g} className={"num-btn" + (grade===g?" active":"")} onClick={function(){setGrade(g);}}>{g}</button>;
           })}
         </div>
@@ -871,7 +989,7 @@ function PageClass(props) {
             return <button key={c} className={"num-btn" + (cnum===c?" active":"")} onClick={function(){setCnum(c);}}>{c}</button>;
           })}
         </div>
-        {grade && cnum && <p className="mb-12" style={{fontWeight:600, color: "var(--pink)"}}>{grade}학년 {cnum}반</p>}
+        {level && grade && cnum && <p className="mb-12" style={{fontWeight:600, color: "var(--pink)"}}>{level} {grade}학년 {cnum}반</p>}
         <button className="btn btn-pink" onClick={addClass}>반 추가</button>
       </div>
 
