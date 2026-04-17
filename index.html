@@ -174,11 +174,70 @@ select { cursor: pointer; }
 }
 @keyframes toastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+@keyframes shakeX { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-8px); } 40%,80% { transform: translateX(8px); } }
+.shake-anim { animation: shakeX 0.4s ease; }
 
 /* Teacher Select Screen */
 .teacher-select-screen {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   min-height: calc(100vh - 120px); padding: 40px 20px 20px;
+}
+
+/* Lock Screen */
+.lock-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 40px 20px;
+  background: linear-gradient(160deg, #fdf2f8 0%, #fce7f3 30%, #fff1f2 60%, #fdf2f8 100%);
+}
+.lock-box {
+  max-width: 360px; width: 100%; padding: 48px 36px 40px; text-align: center;
+  border-radius: 24px;
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(236,72,153,0.12);
+  box-shadow: 0 20px 60px rgba(236,72,153,0.08), 0 4px 20px rgba(0,0,0,0.03);
+}
+.lock-icon {
+  font-size: 56px; margin-bottom: 16px;
+  filter: drop-shadow(0 4px 12px rgba(236,72,153,0.15));
+}
+.lock-title {
+  font-size: 22px; font-weight: 700; color: var(--text-dark); margin-bottom: 6px;
+}
+.lock-title span { color: var(--pink); }
+.lock-sub {
+  font-size: 13px; color: var(--text-sub); margin-bottom: 32px; letter-spacing: 0.03em;
+}
+.lock-dots {
+  display: flex; justify-content: center; gap: 14px; margin-bottom: 24px;
+}
+.lock-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(236,72,153,0.3);
+  background: transparent;
+  transition: all 0.2s ease;
+}
+.lock-dot.filled {
+  background: linear-gradient(135deg, var(--pink), var(--pink-light));
+  border-color: var(--pink);
+  box-shadow: 0 2px 8px rgba(236,72,153,0.3);
+}
+.lock-input {
+  width: 160px !important; margin: 0 auto; display: block;
+  text-align: center; font-size: 24px; letter-spacing: 12px;
+  padding: 12px 16px !important;
+  border: 2px solid rgba(236,72,153,0.2) !important;
+  border-radius: 16px !important;
+  background: rgba(255,255,255,0.6) !important;
+  caret-color: var(--pink);
+}
+.lock-input:focus {
+  border-color: var(--pink) !important;
+  box-shadow: 0 0 0 4px rgba(236,72,153,0.1) !important;
+}
+.lock-input::placeholder { letter-spacing: 12px; color: rgba(236,72,153,0.25); }
+.lock-hint {
+  margin-top: 16px; font-size: 12px; color: var(--text-sub); letter-spacing: 0.02em;
 }
 .teacher-select-box {
   max-width: 480px; width: 100%; padding: 40px; text-align: center;
@@ -424,6 +483,8 @@ select { cursor: pointer; }
 var API_ENDPOINT = "https://anthropic-proxy-virid.vercel.app/api/claude";
 var AI_MODEL = "claude-sonnet-4-6";
 
+var APP_PASSWORD = "1011";
+
 /* ============================
    UTILS
    ============================ */
@@ -462,6 +523,8 @@ var useCallback = React.useCallback;
 var useRef = React.useRef;
 
 function App() {
+  var _auth = useState(false);
+  var authed = _auth[0], setAuthed = _auth[1];
   var _ts = useState(function() { return loadJSON("pca_teachers", []); });
   var teachers = _ts[0], setTeachers = _ts[1];
   var _tid = useState(null);
@@ -546,6 +609,15 @@ function App() {
 
   var teacher = teachers.find(function(t) { return t.id === teacherId; });
 
+  if (!authed) {
+    return (
+      <React.Fragment>
+        <LockScreen onUnlock={function() { setAuthed(true); }} toast={toast} />
+        <ToastContainer toasts={toasts} />
+      </React.Fragment>
+    );
+  }
+
   if (!teacherId) {
     return (
       <React.Fragment>
@@ -623,6 +695,60 @@ function App() {
       {modal && <Modal modal={modal} setModal={setModal} />}
       <ToastContainer toasts={toasts} />
     </React.Fragment>
+  );
+}
+
+/* ============================
+   LOCK SCREEN
+   ============================ */
+function LockScreen(props) {
+  var _pw = useState("");
+  var pw = _pw[0], setPw = _pw[1];
+  var _shake = useState(false);
+  var shake = _shake[0], setShake = _shake[1];
+
+  function tryUnlock() {
+    if (pw === APP_PASSWORD) {
+      props.onUnlock();
+    } else {
+      props.toast("비밀번호가 틀렸습니다");
+      setShake(true);
+      setTimeout(function() { setShake(false); }, 500);
+      setPw("");
+    }
+  }
+
+  var dots = [0,1,2,3];
+
+  return (
+    <div className="lock-screen">
+      <div className={"lock-box glass-strong" + (shake ? " shake-anim" : "")}>
+        <div className="lock-icon">🏫</div>
+        <h1 className="lock-title"><span>경산자인학교</span></h1>
+        <p className="lock-sub">과정중심평가 관리 시스템</p>
+        <div className="lock-dots">
+          {dots.map(function(i) {
+            return <div key={i} className={"lock-dot" + (pw.length > i ? " filled" : "")}></div>;
+          })}
+        </div>
+        <input type="password" value={pw} maxLength={4}
+          onChange={function(e) {
+            var v = e.target.value.replace(/[^0-9]/g, "");
+            setPw(v);
+            if (v.length === 4) {
+              setTimeout(function() {
+                if (v === APP_PASSWORD) { props.onUnlock(); }
+                else { props.toast("비밀번호가 틀렸습니다"); setShake(true); setTimeout(function(){setShake(false);}, 500); setPw(""); }
+              }, 150);
+            }
+          }}
+          onKeyDown={function(e) { if (e.key === "Enter") tryUnlock(); }}
+          className="lock-input"
+          placeholder="····"
+          autoFocus={true} />
+        <p className="lock-hint">4자리 숫자를 입력하세요</p>
+      </div>
+    </div>
   );
 }
 
@@ -1681,6 +1807,7 @@ function PageMemo(props) {
               </div>
             );
           })}
+          <button className="btn btn-pink w-full" style={{marginTop:12}} onClick={function() { props.saveT("m", memos); setSavedAt(new Date()); props.toast("저장 완료"); }}>💾 전체 저장</button>
         </React.Fragment>
       )}
 
@@ -1891,9 +2018,27 @@ function PageAI(props) {
   }
 
   function copyText(text) {
-    navigator.clipboard.writeText(text).then(function() {
-      props.toast("복사 완료");
-    });
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() {
+        props.toast("복사 완료");
+      }).catch(function() {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); props.toast("복사 완료"); }
+    catch(e) { props.toast("복사 실패 — 수동으로 복사하세요"); }
+    document.body.removeChild(ta);
   }
 
   function copyAllOfSemester(semester) {
