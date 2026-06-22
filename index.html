@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="preset.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1476,6 +1477,7 @@ function PageSubject(props) {
    ============================ */
 function PageUnit(props) {
   var subjects = props.loadT("b");
+  var classes = props.loadT("c");
 
   var _bi = useState("");
   var bi = _bi[0], setBi = _bi[1];
@@ -1492,6 +1494,12 @@ function PageUnit(props) {
   var _rH = useState(""); var rH = _rH[0], setRH = _rH[1];
   var _rM = useState(""); var rM = _rM[0], setRM = _rM[1];
   var _rL = useState(""); var rL = _rL[0], setRL = _rL[1];
+
+  /* 교육과정 불러오기 모달 상태 */
+  var _imp = useState(false); var showImp = _imp[0], setShowImp = _imp[1];
+  var _impG = useState(""); var impG = _impG[0], setImpG = _impG[1];
+  var _impS = useState(""); var impS = _impS[0], setImpS = _impS[1];
+  var _impSel = useState({}); var impSel = _impSel[0], setImpSel = _impSel[1];
 
   /* 기존 단원 마이그레이션: sm 필드 없으면 1학기로 자동 지정 */
   useEffect(function() {
@@ -1581,6 +1589,66 @@ function PageUnit(props) {
     return rubrics.some(function(r) { return r.ui === uid2 && (r.h || r.m || r.l); });
   }
 
+  /* === 교육과정 불러오기 === */
+  var PRESET = (typeof window !== "undefined" && window.CURRICULUM_PRESET) ? window.CURRICULUM_PRESET : {};
+
+  function guessGrade() {
+    var sub = subjects.find(function(s) { return s.id === bi; });
+    if (!sub) return "";
+    var cids = sub.cis || (sub.ci ? [sub.ci] : []);
+    if (!cids.length) return "";
+    var cls = classes.find(function(c) { return c.id === cids[0]; });
+    if (!cls) return "";
+    var m = cls.n.match(/(중|고)\s*(\d)/);
+    return m ? m[1] + m[2] : "";
+  }
+
+  function openImport() {
+    var g = guessGrade();
+    setImpG(g);
+    var sub = subjects.find(function(s) { return s.id === bi; });
+    var sname = sub ? sub.na : "";
+    var presetSubs = (g && PRESET[g]) ? Object.keys(PRESET[g]) : [];
+    setImpS(presetSubs.indexOf(sname) >= 0 ? sname : "");
+    setImpSel({});
+    setShowImp(true);
+  }
+
+  function impUnitList() {
+    if (!impG || !impS) return [];
+    return (PRESET[impG] && PRESET[impG][impS]) ? PRESET[impG][impS] : [];
+  }
+
+  function toggleImpAll() {
+    var arr = impUnitList();
+    var anyUnsel = arr.some(function(_, i) { return !impSel[i]; });
+    var ns = {};
+    if (anyUnsel) arr.forEach(function(_, i) { ns[i] = true; });
+    setImpSel(ns);
+  }
+
+  function doImport() {
+    var arr = impUnitList();
+    var picked = arr.filter(function(_, i) { return impSel[i]; });
+    if (!picked.length) { props.toast("단원을 선택하세요"); return; }
+    var curUnits = props.loadT("u");
+    var curRubrics = props.loadT("r");
+    var maxOr = filteredUnits.reduce(function(mx, u) { return Math.max(mx, u.or); }, 0);
+    var added = 0, skipped = 0;
+    picked.forEach(function(p) {
+      if (curUnits.some(function(u) { return u.bi === bi && (u.sm || 1) === sm && u.na === p.u; })) { skipped++; return; }
+      maxOr++;
+      var nid = uid();
+      curUnits = curUnits.concat([{id: nid, bi: bi, na: p.u, or: maxOr, sm: sm}]);
+      curRubrics = curRubrics.concat([{id: uid(), ui: nid, h: p.h || "", m: p.m || "", l: p.l || ""}]);
+      added++;
+    });
+    props.saveT("u", curUnits); setUnits(curUnits);
+    props.saveT("r", curRubrics); setRubrics(curRubrics);
+    setShowImp(false); setImpSel({});
+    props.toast(added + "개 단원 불러옴" + (skipped ? " (" + skipped + "개 중복 제외)" : ""));
+  }
+
   return (
     <div>
       <h2 className="section-title"><span className="emoji">📝</span>단원 / 평가기준</h2>
@@ -1603,6 +1671,9 @@ function PageUnit(props) {
               onKeyDown={function(e) { if (e.key === "Enter") addUnit(); }} />
             <button className="btn btn-pink" onClick={addUnit}>추가</button>
           </div>
+        )}
+        {bi && (
+          <button className="btn btn-mint" style={{marginTop:12}} onClick={openImport}>📥 교육과정에서 평가기준 불러오기</button>
         )}
       </div>
 
@@ -1654,6 +1725,61 @@ function PageUnit(props) {
           );
         })}
       </div>
+
+      {showImp && (
+        <div className="modal-overlay" onClick={function() { setShowImp(false); }}>
+          <div className="modal-box" style={{maxWidth:600, width:"90%", textAlign:"left", maxHeight:"82vh", overflowY:"auto"}} onClick={function(e) { e.stopPropagation(); }}>
+            <h3 style={{textAlign:"center", marginBottom:6}}>📥 교육과정 평가기준 불러오기</h3>
+            <p className="text-sm text-sub mb-16" style={{textAlign:"center"}}>선택한 단원이 <b>{sm}학기</b>로 추가됩니다</p>
+            <div className="flex gap-8 mb-16">
+              <select value={impG} onChange={function(e){ setImpG(e.target.value); setImpS(""); setImpSel({}); }} style={{flex:1}}>
+                <option value="">학년</option>
+                {Object.keys(PRESET).map(function(g) { return <option key={g} value={g}>{g}</option>; })}
+              </select>
+              <select value={impS} onChange={function(e){ setImpS(e.target.value); setImpSel({}); }} style={{flex:2}}>
+                <option value="">과목</option>
+                {(impG && PRESET[impG] ? Object.keys(PRESET[impG]) : []).map(function(s) { return <option key={s} value={s}>{s}</option>; })}
+              </select>
+            </div>
+            {impG && impS && impUnitList().length > 0 && (
+              <React.Fragment>
+                <div className="flex items-center justify-between mb-12">
+                  <span className="text-sm" style={{fontWeight:600}}>단원 {impUnitList().length}개 · 선택 {Object.keys(impSel).length}개</span>
+                  <button className="btn btn-ghost btn-sm" onClick={toggleImpAll}>전체 선택 / 해제</button>
+                </div>
+                {impUnitList().map(function(p, i) {
+                  return (
+                    <label key={i} className="glass mb-8" style={{padding:12, display:"flex", gap:10, alignItems:"flex-start", cursor:"pointer"}}>
+                      <input type="checkbox" checked={!!impSel[i]} style={{marginTop:4, width:"auto"}}
+                        onChange={function(e) {
+                          var ns = Object.assign({}, impSel);
+                          if (e.target.checked) ns[i] = true; else delete ns[i];
+                          setImpSel(ns);
+                        }} />
+                      <div style={{flex:1}}>
+                        <p style={{fontWeight:700, marginBottom:6}}>{p.u}</p>
+                        <div className="rubric-preview" style={{marginTop:0}}>
+                          <div className="rp-row"><span className="rp-label" style={{color:"#059669"}}>상: </span>{p.h || "—"}</div>
+                          <div className="rp-row"><span className="rp-label" style={{color:"#d97706"}}>중: </span>{p.m || "—"}</div>
+                          <div className="rp-row"><span className="rp-label" style={{color:"#e11d48"}}>하: </span>{p.l || "—"}</div>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </React.Fragment>
+            )}
+            {impG && impS && impUnitList().length === 0 && (
+              <p className="text-sub text-center" style={{padding:"20px 0"}}>해당 과목에 등록된 단원이 없습니다.</p>
+            )}
+            <div className="flex gap-8 mt-16" style={{justifyContent:"center"}}>
+              <button className="btn btn-ghost" onClick={function(){ setShowImp(false); }}>취소</button>
+              <button className="btn btn-pink" onClick={doImport}>선택 단원 추가</button>
+            </div>
+            <p className="text-sm text-sub mt-12" style={{textAlign:"center"}}>※ 불러온 뒤 각 단원의 <b>평가기준</b> 버튼으로 바로 수정할 수 있습니다</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
