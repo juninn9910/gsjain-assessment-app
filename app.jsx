@@ -1,0 +1,1972 @@
+/* ============================
+   CONFIG
+   ============================ */
+var API_ENDPOINT = "https://anthropic-proxy-virid.vercel.app/api/claude";
+var AI_MODEL = "claude-sonnet-5";
+
+var APP_PASSWORD = "1011";
+
+/* ============================
+   UTILS
+   ============================ */
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+}
+
+/* UTF-8 기준 바이트 계산 (한글 3바이트, 영문/숫자 1바이트).
+   나이스 입력 화면의 "n / m Byte" 카운터가 UTF-8 기준임을 실측으로 확인했다.
+   (예: "자동입력 테스트 문장입니다." -> 나이스 39, UTF-8 39, EUC-KR 27) */
+var BYTE_ENCODER = new TextEncoder();
+
+/* 프록시 문지기 토큰. Vercel 의 APP_TOKEN 과 같은 값이어야 한다.
+   사용자에게 입력받지 않는다 - 선생님은 설정 없이 바로 쓸 수 있어야 한다.
+   유출되면 Vercel APP_TOKEN 과 이 값을 함께 바꾸고 재배포하면 된다. */
+var APP_TOKEN = "nB_986AEv-o28ubOlm-YaODWnvySOSbi";
+function countBytes(s) {
+  if (!s) return 0;
+  return BYTE_ENCODER.encode(s).length;
+}
+
+function loadJSON(key, fallback) {
+  try {
+    var d = localStorage.getItem(key);
+    return d ? JSON.parse(d) : fallback;
+  } catch(e) { return fallback; }
+}
+
+function saveJSON(key, data) {
+  localStorage.setItem(key, JSON.stringify(data));
+}
+
+/* ============================
+   APP
+   ============================ */
+var useState = React.useState;
+var useEffect = React.useEffect;
+var useCallback = React.useCallback;
+var useRef = React.useRef;
+
+function App() {
+  var _auth = useState(false);
+  var authed = _auth[0], setAuthed = _auth[1];
+  var _ts = useState(function() { return loadJSON("pca_teachers", []); });
+  var teachers = _ts[0], setTeachers = _ts[1];
+  var _tid = useState(null);
+  var teacherId = _tid[0], setTeacherId = _tid[1];
+  var _page = useState("home");
+  var page = _page[0], setPage = _page[1];
+  var _toast = useState([]);
+  var toasts = _toast[0], setToasts = _toast[1];
+  var _modal = useState(null);
+  var modal = _modal[0], setModal = _modal[1];
+
+  function toast(msg) {
+    var id = uid();
+    setToasts(function(prev) { return prev.concat([{id: id, msg: msg}]); });
+    setTimeout(function() {
+      setToasts(function(prev) { return prev.filter(function(t) { return t.id !== id; }); });
+    }, 2000);
+  }
+
+  function saveTeachers(t) {
+    setTeachers(t);
+    saveJSON("pca_teachers", t);
+  }
+
+  /* Data helpers with teacher prefix */
+  function tKey(suffix) { return "pca_" + teacherId + "_" + suffix; }
+  function loadT(suffix) { return loadJSON(tKey(suffix), []); }
+  function saveT(suffix, data) { saveJSON(tKey(suffix), data); }
+
+  /* 데이터 백업 (현재 교사 전체 데이터 JSON 다운로드) */
+  function exportData() {
+    var suffixes = ["c","s","b","u","r","m"];
+    var data = {_teacher: teacher, _exportedAt: new Date().toISOString()};
+    suffixes.forEach(function(s) { data[s] = loadT(s); });
+    /* AI 결과도 포함 */
+    var subjects = loadT("b");
+    var aiResults = {};
+    subjects.forEach(function(sub) {
+      var aiData = loadT("ai_" + sub.id);
+      if (aiData && aiData.length > 0) aiResults[sub.id] = aiData;
+    });
+    data._ai = aiResults;
+    var blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "pca_backup_" + (teacher ? teacher.name : "unknown") + "_" + new Date().toISOString().slice(0,10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    /* 즉시 revoke 하면 다운로드가 취소될 수 있어 지연 해제 */
+    setTimeout(function() { URL.revokeObjectURL(url); }, 10000);
+    toast("백업 파일 다운로드 완료");
+  }
+
+  /* 데이터 복원 (JSON 파일 업로드) */
+  function importData(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var data = JSON.parse(ev.target.result);
+        var suffixes = ["c","s","b","u","r","m"];
+        var hasData = suffixes.some(function(s) { return data[s]; });
+        if (!hasData) { toast("유효하지 않은 백업 파일입니다"); return; }
+        suffixes.forEach(function(s) {
+          if (data[s]) saveT(s, data[s]);
+        });
+        /* AI 결과 복원 */
+        if (data._ai) {
+          Object.keys(data._ai).forEach(function(subId) {
+            saveT("ai_" + subId, data._ai[subId]);
+          });
+        }
+        toast("데이터 복원 완료 — 페이지를 새로고침합니다");
+        setTimeout(function() { location.reload(); }, 1000);
+      } catch(err) {
+        toast("파일 읽기 오류: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";  /* 같은 파일 재선택 가능 */
+  }
+
+  var teacher = teachers.find(function(t) { return t.id === teacherId; });
+
+  if (!authed) {
+    return (
+      <React.Fragment>
+        <LockScreen onUnlock={function() { setAuthed(true); }} toast={toast} />
+        <ToastContainer toasts={toasts} />
+      </React.Fragment>
+    );
+  }
+
+  if (!teacherId) {
+    return (
+      <React.Fragment>
+        <TeacherSelect teachers={teachers} saveTeachers={saveTeachers} onSelect={setTeacherId} toast={toast} />
+        <footer className="app-footer" style={{marginLeft:0, paddingBottom:32}}>
+          <div className="app-footer-inner">
+            <span className="app-footer-brand">경산자인학교</span>
+            <span className="app-footer-dot"></span>
+            <span>Process-Based Assessment System</span>
+            <span className="app-footer-dot"></span>
+            <span>© {new Date().getFullYear()}</span>
+          </div>
+        </footer>
+        <ToastContainer toasts={toasts} />
+      </React.Fragment>
+    );
+  }
+
+  var menus = [
+    {key:"home", icon:"🏠", label:"홈"},
+    {key:"class", icon:"🏫", label:"반 관리"},
+    {key:"students", icon:"👩‍🎓", label:"학생 목록"},
+    {key:"subject", icon:"📚", label:"과목 관리"},
+    {key:"unit", icon:"📝", label:"단원/평가기준"},
+    {key:"memo", icon:"✏️", label:"단원별 메모"},
+    {key:"ai", icon:"🤖", label:"교과학습발달상황"}
+  ];
+
+  return (
+    <React.Fragment>
+      <header className="app-header">
+        <div className="logo">📋 <span>경산자인학교</span> · 과정중심평가 관리</div>
+        <div className="teacher-info">
+          <span>{teacher ? teacher.name : ""} 선생님</span>
+          <button className="btn btn-ghost btn-sm" onClick={function() { setTeacherId(null); setPage("home"); }}>교사 변경</button>
+        </div>
+      </header>
+      <nav className="sidebar">
+        {menus.map(function(m) {
+          return (
+            <button key={m.key} className={"sidebar-item" + (page === m.key ? " active" : "")} onClick={function() { setPage(m.key); }}>
+              <span>{m.icon}</span><span>{m.label}</span>
+            </button>
+          );
+        })}
+        <div style={{flex:1}}></div>
+        <div style={{padding:"8px 12px", borderTop:"1px solid var(--card-border)", marginTop:8}}>
+          <button className="sidebar-item" style={{fontSize:13}} onClick={exportData}>
+            <span>💾</span><span>데이터 백업</span>
+          </button>
+          <label className="sidebar-item" style={{fontSize:13, cursor:"pointer"}}>
+            <span>📂</span><span>데이터 복원</span>
+            <input type="file" accept=".json" onChange={importData} style={{display:"none"}} />
+          </label>
+        </div>
+      </nav>
+      <div className="main">
+        {page === "home" && <PageHome setPage={setPage} loadT={loadT} />}
+        {page === "class" && <PageClass loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
+        {page === "students" && <PageStudents loadT={loadT} />}
+        {page === "subject" && <PageSubject loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
+        {page === "unit" && <PageUnit loadT={loadT} saveT={saveT} toast={toast} setModal={setModal} />}
+        {page === "memo" && <PageMemo loadT={loadT} saveT={saveT} toast={toast} />}
+        {page === "ai" && <PageAI loadT={loadT} saveT={saveT} toast={toast} />}
+      </div>
+      <footer className="app-footer">
+        <div className="app-footer-inner">
+          <span className="app-footer-brand">경산자인학교</span>
+          <span className="app-footer-dot"></span>
+          <span>Process-Based Assessment System</span>
+          <span className="app-footer-dot"></span>
+          <span>© {new Date().getFullYear()}</span>
+        </div>
+      </footer>
+      {modal && <Modal modal={modal} setModal={setModal} />}
+      <ToastContainer toasts={toasts} />
+    </React.Fragment>
+  );
+}
+
+/* ============================
+   LOCK SCREEN
+   ============================ */
+function LockScreen(props) {
+  var _pw = useState("");
+  var pw = _pw[0], setPw = _pw[1];
+  var _shake = useState(false);
+  var shake = _shake[0], setShake = _shake[1];
+
+  function tryUnlock() {
+    if (pw === APP_PASSWORD) {
+      props.onUnlock();
+    } else {
+      props.toast("비밀번호가 틀렸습니다");
+      setShake(true);
+      setTimeout(function() { setShake(false); }, 500);
+      setPw("");
+    }
+  }
+
+  var dots = [0,1,2,3];
+
+  return (
+    <div className="lock-screen">
+      <div className={"lock-box glass-strong" + (shake ? " shake-anim" : "")}>
+        <div className="lock-icon">🏫</div>
+        <h1 className="lock-title"><span>경산자인학교</span></h1>
+        <p className="lock-sub">과정중심평가 관리 시스템</p>
+        <div className="lock-dots">
+          {dots.map(function(i) {
+            return <div key={i} className={"lock-dot" + (pw.length > i ? " filled" : "")}></div>;
+          })}
+        </div>
+        <input type="password" value={pw} maxLength={4}
+          onChange={function(e) {
+            var v = e.target.value.replace(/[^0-9]/g, "");
+            setPw(v);
+            if (v.length === 4) {
+              setTimeout(function() {
+                if (v === APP_PASSWORD) { props.onUnlock(); }
+                else { props.toast("비밀번호가 틀렸습니다"); setShake(true); setTimeout(function(){setShake(false);}, 500); setPw(""); }
+              }, 150);
+            }
+          }}
+          onKeyDown={function(e) { if (e.key === "Enter") tryUnlock(); }}
+          className="lock-input"
+          placeholder="····"
+          autoFocus={true} />
+        <p className="lock-hint">4자리 숫자를 입력하세요</p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   TEACHER SELECT
+   ============================ */
+function TeacherSelect(props) {
+  var _n = useState("");
+  var name = _n[0], setName = _n[1];
+  var _editId = useState(null);
+  var editId = _editId[0], setEditId = _editId[1];
+  var _editName = useState("");
+  var editName = _editName[0], setEditName = _editName[1];
+  var _confirmDelete = useState(null);
+  var confirmDelete = _confirmDelete[0], setConfirmDelete = _confirmDelete[1];
+
+  function addTeacher() {
+    var n = name.trim();
+    if (!n) return;
+    if (props.teachers.some(function(t) { return t.name === n; })) {
+      props.toast("이미 등록된 교사입니다");
+      return;
+    }
+    var nw = props.teachers.concat([{id: uid(), name: n}]);
+    props.saveTeachers(nw);
+    setName("");
+    props.toast(n + " 선생님 등록 완료");
+  }
+
+  function startEdit(t) {
+    setEditId(t.id);
+    setEditName(t.name);
+  }
+
+  function saveEdit() {
+    var n = editName.trim();
+    if (!n) return;
+    if (props.teachers.some(function(t) { return t.id !== editId && t.name === n; })) {
+      props.toast("이미 등록된 이름입니다");
+      return;
+    }
+    var nw = props.teachers.map(function(t) {
+      if (t.id === editId) return Object.assign({}, t, {name: n});
+      return t;
+    });
+    props.saveTeachers(nw);
+    setEditId(null);
+    props.toast("이름 수정 완료");
+  }
+
+  function deleteTeacher(tid) {
+    /* 해당 교사의 모든 데이터 삭제 (ai_ 결과 포함) */
+    var keys = ["c","s","b","u","r","m"];
+    keys.forEach(function(k) { localStorage.removeItem("pca_" + tid + "_" + k); });
+    /* ai_ 결과 키도 삭제: pca_{tid}_ai_{과목id} */
+    var subjects = loadJSON("pca_" + tid + "_b", []);
+    subjects.forEach(function(sub) { localStorage.removeItem("pca_" + tid + "_ai_" + sub.id); });
+    var nw = props.teachers.filter(function(t) { return t.id !== tid; });
+    props.saveTeachers(nw);
+    setConfirmDelete(null);
+    props.toast("교사 삭제 완료");
+  }
+
+  return (
+    <div className="teacher-select-screen">
+      <div className="teacher-select-box glass-strong">
+        <h1>📋 <span>경산자인학교</span></h1>
+        <p className="sub">과정중심평가 관리 시스템</p>
+        <p className="mb-16" style={{fontWeight:600, fontSize:15}}>교사를 선택하세요</p>
+        <div className="teacher-grid">
+          {props.teachers.map(function(t) {
+            if (editId === t.id) {
+              return (
+                <div key={t.id} className="flex gap-8" style={{width:"100%"}}>
+                  <input type="text" value={editName} onChange={function(e){setEditName(e.target.value);}}
+                    onKeyDown={function(e) { if (e.key === "Enter") saveEdit(); }}
+                    style={{flex:1, padding:"8px 12px"}} />
+                  <button className="btn btn-pink btn-sm" onClick={saveEdit}>저장</button>
+                  <button className="btn btn-ghost btn-sm" onClick={function(){setEditId(null);}}>취소</button>
+                </div>
+              );
+            }
+            return (
+              <div key={t.id} style={{display:"flex", alignItems:"center", gap:6}}>
+                <button className="teacher-btn" style={{flex:1}} onClick={function() { props.onSelect(t.id); }}>
+                  {t.name}
+                </button>
+                <button className="btn btn-ghost btn-sm" style={{padding:"6px 8px", fontSize:12}} onClick={function() { startEdit(t); }}>✏️</button>
+                <button className="btn btn-red btn-sm" style={{padding:"6px 8px", fontSize:12}} onClick={function() { setConfirmDelete(t.id); }}>✕</button>
+              </div>
+            );
+          })}
+          {props.teachers.length === 0 && <p className="text-sub text-sm">등록된 교사가 없습니다</p>}
+        </div>
+
+        {/* 교사 삭제 확인 */}
+        {confirmDelete && (
+          <div style={{margin:"16px 0", padding:16, borderRadius:12, background:"rgba(251,113,133,0.1)", border:"1px solid rgba(251,113,133,0.3)"}}>
+            <p style={{fontWeight:600, marginBottom:8}}>⚠️ 정말 삭제하시겠습니까?</p>
+            <p className="text-sm text-sub" style={{marginBottom:12}}>해당 교사의 반·학생·과목·단원·메모 데이터가 모두 삭제됩니다.</p>
+            <div className="flex gap-8">
+              <button className="btn btn-red btn-sm" onClick={function() { deleteTeacher(confirmDelete); }}>삭제</button>
+              <button className="btn btn-ghost btn-sm" onClick={function() { setConfirmDelete(null); }}>취소</button>
+            </div>
+          </div>
+        )}
+
+        <div className="teacher-add">
+          <input type="text" placeholder="새 교사 이름" value={name} onChange={function(e) { setName(e.target.value); }}
+            onKeyDown={function(e) { if (e.key === "Enter") addTeacher(); }}
+            style={{flex:1}} />
+          <button className="btn btn-pink" onClick={addTeacher}>등록</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   MODAL
+   ============================ */
+function Modal(props) {
+  var m = props.modal;
+  return (
+    <div className="modal-overlay" onClick={function() { props.setModal(null); }}>
+      <div className="modal-box" onClick={function(e) { e.stopPropagation(); }}>
+        <h3>⚠️ {m.title || "삭제 확인"}</h3>
+        <p>{m.msg || "정말 삭제하시겠습니까?"}</p>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={function() { props.setModal(null); }}>취소</button>
+          <button className="btn btn-red" onClick={function() { m.onConfirm(); props.setModal(null); }}>삭제</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   TOAST
+   ============================ */
+function ToastContainer(props) {
+  if (props.toasts.length === 0) return null;
+  return (
+    <div className="toast-container">
+      {props.toasts.map(function(t) {
+        return <div key={t.id} className="toast">{t.msg}</div>;
+      })}
+    </div>
+  );
+}
+
+/* ============================
+   HOME
+   ============================ */
+function PageHome(props) {
+  var classes = props.loadT("c");
+  var students = props.loadT("s");
+  var subjects = props.loadT("b");
+  var units = props.loadT("u");
+
+  var now = new Date();
+  var hour = now.getHours();
+  var greeting = hour < 6 ? "밤이 깊었습니다" : hour < 12 ? "좋은 아침입니다" : hour < 18 ? "좋은 오후입니다" : "수고 많으셨습니다";
+
+  return (
+    <div>
+      {/* 상단 인사 + 현황 */}
+      <div className="home-hero glass-strong mb-16">
+        <div>
+          <p className="text-sub text-sm mb-8">{greeting}</p>
+          <h1 className="home-hero-title">오늘도 아이들의 성장을 기록합니다.</h1>
+        </div>
+        <div className="home-stats">
+          <div className="home-stat">
+            <div className="home-stat-label">관리 반</div>
+            <div className="home-stat-value">{classes.length}<span className="home-stat-unit">개</span></div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-label">학생</div>
+            <div className="home-stat-value">{students.length}<span className="home-stat-unit">명</span></div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-label">과목</div>
+            <div className="home-stat-value">{subjects.length}<span className="home-stat-unit">개</span></div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-label">단원</div>
+            <div className="home-stat-value">{units.length}<span className="home-stat-unit">개</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* 주요 기능 카드 */}
+      <div className="home-card-grid">
+        <button className="home-card-rich glass" onClick={function() { props.setPage("class"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">🏫</span>
+            <span className="home-card-chip">{classes.length}개 반 · {students.length}명</span>
+          </div>
+          <div className="home-card-title">반 관리</div>
+          <div className="home-card-desc">학년·반을 등록하고 학생의 이름과 특성을 기록합니다.</div>
+          <div className="home-card-cta">관리하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass" onClick={function() { props.setPage("students"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">👩‍🎓</span>
+            <span className="home-card-chip">{students.length}명</span>
+          </div>
+          <div className="home-card-title">학생 목록</div>
+          <div className="home-card-desc">전체 학생을 반별로 조회하고 검색합니다.</div>
+          <div className="home-card-cta">조회하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass" onClick={function() { props.setPage("subject"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">📚</span>
+            <span className="home-card-chip">{subjects.length}개 과목</span>
+          </div>
+          <div className="home-card-title">과목 관리</div>
+          <div className="home-card-desc">담당 반별로 개설 과목을 등록하고 묶습니다.</div>
+          <div className="home-card-cta">관리하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass" onClick={function() { props.setPage("unit"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">📝</span>
+            <span className="home-card-chip">{units.length}개 단원</span>
+          </div>
+          <div className="home-card-title">단원 / 평가기준</div>
+          <div className="home-card-desc">학기별 단원과 상·중·하 평가기준을 설정합니다.</div>
+          <div className="home-card-cta">관리하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass" onClick={function() { props.setPage("memo"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">✏️</span>
+            <span className="home-card-chip">학생별 기록</span>
+          </div>
+          <div className="home-card-title">단원별 메모</div>
+          <div className="home-card-desc">학생별 도달 수준과 관찰 메모를 남깁니다.</div>
+          <div className="home-card-cta">작성하기 →</div>
+        </button>
+
+        <button className="home-card-rich glass home-card-highlight" onClick={function() { props.setPage("ai"); }}>
+          <div className="home-card-head">
+            <span className="home-card-emoji">🤖</span>
+            <span className="home-card-chip home-card-chip-accent">AI</span>
+          </div>
+          <div className="home-card-title">교과학습발달상황</div>
+          <div className="home-card-desc">입력된 메모를 바탕으로 나이스 입력용 초안을 자동 생성합니다.</div>
+          <div className="home-card-cta">생성하기 →</div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   STUDENTS LIST (전체 학생 목록)
+   ============================ */
+function PageStudents(props) {
+  var classes = props.loadT("c");
+  var students = props.loadT("s");
+  var _filterCi = useState("");
+  var filterCi = _filterCi[0], setFilterCi = _filterCi[1];
+  var _search = useState("");
+  var search = _search[0], setSearch = _search[1];
+
+  var filtered = students.filter(function(s) {
+    if (filterCi && s.ci !== filterCi) return false;
+    if (search) {
+      var q = search.trim().toLowerCase();
+      if (s.na.toLowerCase().indexOf(q) < 0 && String(s.nu).indexOf(q) < 0) return false;
+    }
+    return true;
+  }).sort(function(a, b) {
+    /* 반 이름순 → 번호순 */
+    var ca = classes.find(function(c) { return c.id === a.ci; });
+    var cb = classes.find(function(c) { return c.id === b.ci; });
+    var na = ca ? ca.n : "";
+    var nb = cb ? cb.n : "";
+    if (na !== nb) return na < nb ? -1 : 1;
+    return a.nu - b.nu;
+  });
+
+  function getClassName(cid) {
+    var c = classes.find(function(c) { return c.id === cid; });
+    return c ? c.n : "";
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">👩‍🎓</span>전체 학생 목록</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center" style={{flexWrap:"wrap"}}>
+          <select value={filterCi} onChange={function(e){setFilterCi(e.target.value);}} style={{width:180}}>
+            <option value="">전체 반</option>
+            {classes.map(function(c) {
+              return <option key={c.id} value={c.id}>{c.n}</option>;
+            })}
+          </select>
+          <input type="text" placeholder="이름 또는 번호 검색" value={search} onChange={function(e){setSearch(e.target.value);}} style={{flex:1, maxWidth:240}} />
+          <span className="tag">{filtered.length}명</span>
+        </div>
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">등록된 학생이 없습니다.</p>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="glass" style={{padding:0, overflow:"hidden"}}>
+          <table style={{width:"100%", borderCollapse:"collapse", fontSize:14}}>
+            <thead>
+              <tr style={{background:"rgba(16,122,87,0.06)", textAlign:"left"}}>
+                <th style={{padding:"12px 16px", fontWeight:700}}>반</th>
+                <th style={{padding:"12px 8px", fontWeight:700, width:50, textAlign:"center"}}>번호</th>
+                <th style={{padding:"12px 16px", fontWeight:700}}>이름</th>
+                <th style={{padding:"12px 16px", fontWeight:700}}>특성</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(function(s) {
+                return (
+                  <tr key={s.id} style={{borderTop:"1px solid var(--card-border)"}}>
+                    <td style={{padding:"10px 16px"}}><span className="tag">{getClassName(s.ci)}</span></td>
+                    <td style={{padding:"10px 8px", textAlign:"center", fontWeight:600}}>{s.nu}</td>
+                    <td style={{padding:"10px 16px", fontWeight:500}}>{s.na}</td>
+                    <td style={{padding:"10px 16px", fontSize:13, color:"var(--text-sub)"}}>{s.ch || "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================
+   CLASS MANAGEMENT
+   ============================ */
+function PageClass(props) {
+  var _cls = useState(function() { return props.loadT("c"); });
+  var classes = _cls[0], setClasses = _cls[1];
+  var _stu = useState(function() { return props.loadT("s"); });
+  var students = _stu[0], setStudents = _stu[1];
+  var _level = useState(null);  /* "중" 또는 "고" */
+  var level = _level[0], setLevel = _level[1];
+  var _grade = useState(null);
+  var grade = _grade[0], setGrade = _grade[1];
+  var _cnum = useState(null);
+  var cnum = _cnum[0], setCnum = _cnum[1];
+  var _sname = useState("");
+  var sname = _sname[0], setSname = _sname[1];
+  var _snum = useState("");
+  var snum = _snum[0], setSnum = _snum[1];
+  var _editChar = useState(null);
+  var editChar = _editChar[0], setEditChar = _editChar[1];
+  var _charText = useState("");
+  var charText = _charText[0], setCharText = _charText[1];
+  var _editStudent = useState(null);  /* 학생 정보 편집 중 ID */
+  var editStudent = _editStudent[0], setEditStudent = _editStudent[1];
+  var _editStuNum = useState("");
+  var editStuNum = _editStuNum[0], setEditStuNum = _editStuNum[1];
+  var _editStuName = useState("");
+  var editStuName = _editStuName[0], setEditStuName = _editStuName[1];
+  var _addingCid = useState(null);  /* 학생 추가 중인 반 ID */
+  var addingCid = _addingCid[0], setAddingCid = _addingCid[1];
+
+  function addClass() {
+    if (!level || !grade || !cnum) { props.toast("학교급·학년·반을 모두 선택하세요"); return; }
+    var n = level + " " + grade + "학년 " + cnum + "반";
+    if (classes.some(function(c) { return c.n === n; })) { props.toast("이미 등록된 반입니다"); return; }
+    var nw = classes.concat([{id: uid(), n: n}]);
+    props.saveT("c", nw);
+    setClasses(nw);
+    setLevel(null); setGrade(null); setCnum(null);
+    props.toast(n + " 추가 완료");
+  }
+
+  function deleteClass(cid) {
+    props.setModal({
+      msg: "반을 삭제하면 소속 학생이 삭제되고, 해당 반만 연결된 과목·단원도 삭제됩니다.",
+      onConfirm: function() {
+        var nc = classes.filter(function(c) { return c.id !== cid; });
+        props.saveT("c", nc); setClasses(nc);
+        /* cascade students */
+        var ns = students.filter(function(s) { return s.ci !== cid; });
+        props.saveT("s", ns); setStudents(ns);
+        /* cascade subjects: 다중 반 지원 — 해당 반을 cis에서 제거, cis가 빈 배열이면 과목 삭제 */
+        var subjects = props.loadT("b");
+        var updatedSubs = [];
+        var delSubIds = [];
+        subjects.forEach(function(b) {
+          var cids = b.cis || (b.ci ? [b.ci] : []);
+          var remaining = cids.filter(function(c) { return c !== cid; });
+          if (remaining.length === 0) {
+            delSubIds.push(b.id);
+          } else {
+            updatedSubs.push(Object.assign({}, b, {cis: remaining, ci: undefined}));
+          }
+        });
+        props.saveT("b", updatedSubs);
+        /* cascade units/rubrics/memos for deleted subjects */
+        var units = props.loadT("u");
+        var delUnitIds = units.filter(function(u) { return delSubIds.indexOf(u.bi) >= 0; }).map(function(u) { return u.id; });
+        props.saveT("u", units.filter(function(u) { return delSubIds.indexOf(u.bi) < 0; }));
+        var rubrics = props.loadT("r");
+        props.saveT("r", rubrics.filter(function(r) { return delUnitIds.indexOf(r.ui) < 0; }));
+        var memos = props.loadT("m");
+        props.saveT("m", memos.filter(function(m) { return delUnitIds.indexOf(m.ui) < 0; }));
+        props.toast("삭제 완료");
+      }
+    });
+  }
+
+  function addStudent(cid) {
+    var nu = parseInt(snum);
+    var nm = sname.trim();
+    if (!nu || !nm) { props.toast("번호와 이름을 입력하세요"); return; }
+    if (students.some(function(s) { return s.ci === cid && s.nu === nu; })) {
+      props.toast("이미 등록된 번호입니다"); return;
+    }
+    var nw = students.concat([{id: uid(), ci: cid, na: nm, nu: nu, ch: ""}]);
+    props.saveT("s", nw); setStudents(nw);
+    setSname(""); setSnum("");
+    /* 입력란은 열어둠 — 연속 추가 편의 */
+    props.toast(nm + " 추가 완료");
+  }
+
+  function openAddStudent(cid) {
+    setAddingCid(cid);
+    setSnum(""); setSname("");
+  }
+
+  function deleteStudent(sid) {
+    props.setModal({
+      msg: "학생을 삭제하시겠습니까?",
+      onConfirm: function() {
+        var ns = students.filter(function(s) { return s.id !== sid; });
+        props.saveT("s", ns); setStudents(ns);
+        var memos = props.loadT("m");
+        props.saveT("m", memos.filter(function(m) { return m.si !== sid; }));
+        props.toast("삭제 완료");
+      }
+    });
+  }
+
+  function openChar(sid) {
+    var s = students.find(function(s) { return s.id === sid; });
+    setEditChar(sid);
+    setCharText(s ? s.ch : "");
+  }
+
+  function saveChar() {
+    var ns = students.map(function(s) {
+      if (s.id === editChar) return Object.assign({}, s, {ch: charText});
+      return s;
+    });
+    props.saveT("s", ns); setStudents(ns);
+    setEditChar(null);
+    props.toast("특성 저장 완료");
+  }
+
+  function startEditStudent(st) {
+    setEditStudent(st.id);
+    setEditStuNum(String(st.nu));
+    setEditStuName(st.na);
+  }
+
+  function saveEditStudent(cid) {
+    var nu = parseInt(editStuNum);
+    var nm = editStuName.trim();
+    if (!nu || !nm) { props.toast("번호와 이름을 입력하세요"); return; }
+    /* 같은 반에서 다른 학생과 번호 중복 방지 */
+    if (students.some(function(s) { return s.ci === cid && s.nu === nu && s.id !== editStudent; })) {
+      props.toast("이미 사용 중인 번호입니다"); return;
+    }
+    var ns = students.map(function(s) {
+      if (s.id === editStudent) return Object.assign({}, s, {nu: nu, na: nm});
+      return s;
+    });
+    props.saveT("s", ns); setStudents(ns);
+    setEditStudent(null);
+    props.toast("학생 정보 수정 완료");
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">🏫</span>반 관리</h2>
+
+      {/* Add class */}
+      <div className="glass mb-16" style={{padding:20}}>
+        <p style={{fontWeight:600, marginBottom:12}}>학교급 선택</p>
+        <div className="num-btn-group mb-12">
+          <button className={"num-btn" + (level==="중"?" active":"")} style={{width:"auto", padding:"0 20px"}} onClick={function(){setLevel("중");}}>중학교</button>
+          <button className={"num-btn" + (level==="고"?" active":"")} style={{width:"auto", padding:"0 20px"}} onClick={function(){setLevel("고");}}>고등학교</button>
+        </div>
+        <p style={{fontWeight:600, marginBottom:12}}>학년 선택</p>
+        <div className="num-btn-group mb-12">
+          {[1,2,3].map(function(g) {
+            return <button key={g} className={"num-btn" + (grade===g?" active":"")} onClick={function(){setGrade(g);}}>{g}</button>;
+          })}
+        </div>
+        <p style={{fontWeight:600, marginBottom:12}}>반 선택</p>
+        <div className="num-btn-group mb-12">
+          {[1,2,3,4,5,6,7,8,9,10].map(function(c) {
+            return <button key={c} className={"num-btn" + (cnum===c?" active":"")} onClick={function(){setCnum(c);}}>{c}</button>;
+          })}
+        </div>
+        {level && grade && cnum && <p className="mb-12" style={{fontWeight:600, color: "var(--pink)"}}>{level} {grade}학년 {cnum}반</p>}
+        <button className="btn btn-pink" onClick={addClass}>반 추가</button>
+      </div>
+
+      {/* Class list */}
+      <div className="card-list">
+        {classes.map(function(cl) {
+          var clStudents = students.filter(function(s) { return s.ci === cl.id; }).sort(function(a,b) { return a.nu - b.nu; });
+          return (
+            <div key={cl.id} className="card-item glass">
+              <div className="card-header">
+                <span className="card-title">{cl.n}</span>
+                <div className="flex gap-8">
+                  <span className="tag">{clStudents.length}명</span>
+                  <button className="btn btn-red btn-sm" onClick={function() { deleteClass(cl.id); }}>삭제</button>
+                </div>
+              </div>
+
+              {/* Student list */}
+              {clStudents.map(function(st) {
+                if (editStudent === st.id) {
+                  return (
+                    <div key={st.id} className="flex items-center gap-8 mb-8" style={{paddingLeft:8}}>
+                      <input type="number" value={editStuNum} onChange={function(e){setEditStuNum(e.target.value);}} style={{width:60}} min="1" max="30" />
+                      <input type="text" value={editStuName} onChange={function(e){setEditStuName(e.target.value);}} style={{flex:1}}
+                        onKeyDown={function(e) { if (e.key === "Enter") saveEditStudent(cl.id); }} />
+                      <button className="btn btn-pink btn-sm" onClick={function() { saveEditStudent(cl.id); }}>저장</button>
+                      <button className="btn btn-ghost btn-sm" onClick={function(){setEditStudent(null);}}>취소</button>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={st.id} className="flex items-center gap-8 mb-8" style={{paddingLeft:8}}>
+                    <span className="tag" style={{minWidth:32, textAlign:"center"}}>{st.nu}</span>
+                    <span style={{fontWeight:500, flex:1}}>{st.na}</span>
+                    <button className="btn btn-ghost btn-sm" style={{padding:"4px 8px", fontSize:11}} onClick={function() { startEditStudent(st); }}>✏️</button>
+                    <button className="btn btn-ghost btn-sm" onClick={function() { openChar(st.id); }}>특성</button>
+                    <button className="btn btn-red btn-sm" onClick={function() { deleteStudent(st.id); }}>삭제</button>
+                  </div>
+                );
+              })}
+
+              {/* Character edit */}
+              {editChar && students.some(function(s) { return s.id === editChar && s.ci === cl.id; }) && (
+                <div className="glass" style={{padding:16, margin:"12px 0"}}>
+                  <p className="text-sm mb-8" style={{fontWeight:600}}>학생 특성</p>
+                  <textarea value={charText} onChange={function(e){setCharText(e.target.value);}} placeholder="예: 소근육 약함, 글자 인식 느림, 집중시간 짧음" />
+                  <div className="flex gap-8 mt-12">
+                    <button className="btn btn-pink btn-sm" onClick={saveChar}>저장</button>
+                    <button className="btn btn-ghost btn-sm" onClick={function(){setEditChar(null);}}>취소</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Add student */}
+              {addingCid === cl.id ? (
+                <div className="flex gap-8 mt-12" style={{paddingLeft:8}}>
+                  <input type="number" placeholder="번호" value={snum} onChange={function(e){setSnum(e.target.value);}} style={{width:70}} min="1" max="30" />
+                  <input type="text" placeholder="이름" value={sname} onChange={function(e){setSname(e.target.value);}} style={{flex:1}}
+                    onKeyDown={function(e) { if (e.key === "Enter") addStudent(cl.id); }} />
+                  <button className="btn btn-mint btn-sm" onClick={function() { addStudent(cl.id); }}>추가</button>
+                  <button className="btn btn-ghost btn-sm" onClick={function() { setAddingCid(null); }}>닫기</button>
+                </div>
+              ) : (
+                <div className="mt-12" style={{paddingLeft:8}}>
+                  <button className="btn btn-ghost btn-sm" onClick={function() { openAddStudent(cl.id); }}>+ 학생 추가</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   SUBJECT MANAGEMENT
+   ============================ */
+function PageSubject(props) {
+  var _sub = useState(function() { return props.loadT("b"); });
+  var subjects = _sub[0], setSubjects = _sub[1];
+  var classes = props.loadT("c");
+  var _selCids = useState([]);  /* 선택된 반 ID 배열 */
+  var selCids = _selCids[0], setSelCids = _selCids[1];
+  var _name = useState("");
+  var name = _name[0], setName = _name[1];
+
+  /* 과목 마이그레이션: ci → cis (하위 호환) */
+  useEffect(function() {
+    var needMigrate = subjects.some(function(s) { return s.ci && !s.cis; });
+    if (needMigrate) {
+      var migrated = subjects.map(function(s) {
+        if (s.ci && !s.cis) return Object.assign({}, s, {cis: [s.ci], ci: undefined});
+        return s;
+      });
+      props.saveT("b", migrated);
+      setSubjects(migrated);
+    }
+  }, []);
+
+  /* 과목의 반 ID 배열 가져오기 (하위 호환) */
+  function getSubCids(sub) {
+    if (sub.cis) return sub.cis;
+    if (sub.ci) return [sub.ci];
+    return [];
+  }
+
+  function toggleCid(cid) {
+    setSelCids(function(prev) {
+      if (prev.indexOf(cid) >= 0) return prev.filter(function(c) { return c !== cid; });
+      return prev.concat([cid]);
+    });
+  }
+
+  function addSubject() {
+    var nm = name.trim();
+    if (selCids.length === 0 || !nm) { props.toast("반을 선택하고 과목명을 입력하세요"); return; }
+    /* 같은 이름의 과목이 같은 반 조합으로 이미 있는지 (이름만 체크) */
+    if (subjects.some(function(s) { return s.na === nm; })) {
+      props.toast("이미 등록된 과목명입니다"); return;
+    }
+    var nw = subjects.concat([{id: uid(), na: nm, cis: selCids.slice()}]);
+    props.saveT("b", nw); setSubjects(nw);
+    setName(""); setSelCids([]);
+    props.toast(nm + " 추가 완료");
+  }
+
+  function deleteSubject(sid) {
+    var sub = subjects.find(function(s) { return s.id === sid; });
+    props.setModal({
+      msg: (sub ? sub.na : "과목") + "을(를) 삭제하면 소속 단원과 AI 결과가 모두 삭제됩니다.",
+      onConfirm: function() {
+        var ns = subjects.filter(function(s) { return s.id !== sid; });
+        props.saveT("b", ns); setSubjects(ns);
+        var units = props.loadT("u");
+        var delUids = units.filter(function(u) { return u.bi === sid; }).map(function(u) { return u.id; });
+        props.saveT("u", units.filter(function(u) { return u.bi !== sid; }));
+        var rubrics = props.loadT("r");
+        props.saveT("r", rubrics.filter(function(r) { return delUids.indexOf(r.ui) < 0; }));
+        var memos = props.loadT("m");
+        props.saveT("m", memos.filter(function(m) { return delUids.indexOf(m.ui) < 0; }));
+        /* AI 결과 삭제 */
+        props.saveT("ai_" + sid, []);
+        props.toast("삭제 완료");
+      }
+    });
+  }
+
+  function getClassNames(sub) {
+    var cids = getSubCids(sub);
+    return cids.map(function(cid) {
+      var c = classes.find(function(c) { return c.id === cid; });
+      return c ? c.n : "";
+    }).filter(Boolean).join(", ");
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">📚</span>과목 관리</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <p style={{fontWeight:600, marginBottom:8}}>담당 반 선택 (복수 선택 가능)</p>
+        <div className="num-btn-group mb-12">
+          {classes.map(function(c) {
+            var isSelected = selCids.indexOf(c.id) >= 0;
+            return (
+              <button key={c.id} className={"num-btn" + (isSelected ? " active" : "")}
+                style={{width:"auto", padding:"0 14px", fontSize:13, height:40}}
+                onClick={function() { toggleCid(c.id); }}>
+                {c.n}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex gap-8 items-center">
+          <input type="text" placeholder="과목명" value={name} onChange={function(e){setName(e.target.value);}} style={{flex:1}}
+            onKeyDown={function(e) { if (e.key === "Enter") addSubject(); }} />
+          <button className="btn btn-pink" onClick={addSubject}>추가</button>
+        </div>
+        {selCids.length > 0 && (
+          <p className="text-sm mt-12" style={{color:"var(--pink)"}}>
+            선택: {selCids.map(function(cid) { var c = classes.find(function(c) { return c.id === cid; }); return c ? c.n : ""; }).join(", ")}
+          </p>
+        )}
+      </div>
+      <div className="card-list">
+        {subjects.map(function(sub) {
+          return (
+            <div key={sub.id} className="card-item glass">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-8" style={{flexWrap:"wrap"}}>
+                  <span style={{fontWeight:600}}>{sub.na}</span>
+                  {getSubCids(sub).map(function(cid) {
+                    var c = classes.find(function(c) { return c.id === cid; });
+                    return c ? <span key={cid} className="tag">{c.n}</span> : null;
+                  })}
+                </div>
+                <button className="btn btn-red btn-sm" onClick={function() { deleteSubject(sub.id); }}>삭제</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================
+   UNIT / RUBRIC
+   ============================ */
+function PageUnit(props) {
+  var subjects = props.loadT("b");
+  var classes = props.loadT("c");
+
+  var _bi = useState("");
+  var bi = _bi[0], setBi = _bi[1];
+  var _sm = useState(1);  /* 선택된 학기 (1 또는 2) */
+  var sm = _sm[0], setSm = _sm[1];
+  var _units = useState(function() { return props.loadT("u"); });
+  var units = _units[0], setUnits = _units[1];
+  var _rubrics = useState(function() { return props.loadT("r"); });
+  var rubrics = _rubrics[0], setRubrics = _rubrics[1];
+  var _uname = useState("");
+  var uname = _uname[0], setUname = _uname[1];
+  var _editUid = useState(null);
+  var editUid = _editUid[0], setEditUid = _editUid[1];
+  var _rH = useState(""); var rH = _rH[0], setRH = _rH[1];
+  var _rM = useState(""); var rM = _rM[0], setRM = _rM[1];
+  var _rL = useState(""); var rL = _rL[0], setRL = _rL[1];
+
+  /* 교육과정 불러오기 모달 상태 */
+  var _imp = useState(false); var showImp = _imp[0], setShowImp = _imp[1];
+  var _impG = useState(""); var impG = _impG[0], setImpG = _impG[1];
+  var _impS = useState(""); var impS = _impS[0], setImpS = _impS[1];
+  var _impSel = useState({}); var impSel = _impSel[0], setImpSel = _impSel[1];
+
+  /* 기존 단원 마이그레이션: sm 필드 없으면 1학기로 자동 지정 */
+  useEffect(function() {
+    var needMigrate = units.some(function(u) { return !u.sm; });
+    if (needMigrate) {
+      var migrated = units.map(function(u) {
+        if (!u.sm) return Object.assign({}, u, {sm: 1});
+        return u;
+      });
+      props.saveT("u", migrated);
+      setUnits(migrated);
+    }
+  }, []);
+
+  var filteredUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === sm; }).sort(function(a,b) { return a.or - b.or; });
+
+  function addUnit() {
+    var nm = uname.trim();
+    if (!bi || !nm) { props.toast("과목과 단원명을 입력하세요"); return; }
+    /* 같은 과목·같은 학기에 동일 이름 중복 방지 */
+    if (units.some(function(u) { return u.bi === bi && (u.sm || 1) === sm && u.na === nm; })) {
+      props.toast("이미 등록된 단원입니다"); return;
+    }
+    var maxOr = filteredUnits.reduce(function(mx, u) { return Math.max(mx, u.or); }, 0);
+    var nw = units.concat([{id: uid(), bi: bi, na: nm, or: maxOr + 1, sm: sm}]);
+    props.saveT("u", nw); setUnits(nw);
+    setUname("");
+    props.toast(sm + "학기 단원 추가 완료");
+  }
+
+  function deleteUnit(uid2) {
+    props.setModal({
+      msg: "단원을 삭제하시겠습니까?",
+      onConfirm: function() {
+        var nu = units.filter(function(u) { return u.id !== uid2; });
+        props.saveT("u", nu); setUnits(nu);
+        var nr = rubrics.filter(function(r) { return r.ui !== uid2; });
+        props.saveT("r", nr); setRubrics(nr);
+        var memos = props.loadT("m");
+        props.saveT("m", memos.filter(function(m) { return m.ui !== uid2; }));
+        props.toast("삭제 완료");
+      }
+    });
+  }
+
+  function moveUnit(uid2, direction) {
+    /* direction: -1 (위로), +1 (아래로) */
+    var idx = filteredUnits.findIndex(function(u) { return u.id === uid2; });
+    if (idx < 0) return;
+    var swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= filteredUnits.length) return;
+    var thisUnit = filteredUnits[idx];
+    var swapUnit = filteredUnits[swapIdx];
+    /* or 값 교환 */
+    var nw = units.map(function(u) {
+      if (u.id === thisUnit.id) return Object.assign({}, u, {or: swapUnit.or});
+      if (u.id === swapUnit.id) return Object.assign({}, u, {or: thisUnit.or});
+      return u;
+    });
+    props.saveT("u", nw); setUnits(nw);
+  }
+
+  function openRubric(uid2) {
+    setEditUid(uid2);
+    var r = rubrics.find(function(r) { return r.ui === uid2; });
+    if (r) { setRH(r.h); setRM(r.m); setRL(r.l); }
+    else { setRH(""); setRM(""); setRL(""); }
+  }
+
+  function saveRubric() {
+    var existing = rubrics.find(function(r) { return r.ui === editUid; });
+    var nr;
+    if (existing) {
+      nr = rubrics.map(function(r) {
+        if (r.ui === editUid) return Object.assign({}, r, {h: rH, m: rM, l: rL});
+        return r;
+      });
+    } else {
+      nr = rubrics.concat([{id: uid(), ui: editUid, h: rH, m: rM, l: rL}]);
+    }
+    props.saveT("r", nr); setRubrics(nr);
+    setEditUid(null);
+    props.toast("평가기준 저장 완료");
+  }
+
+  function hasRubric(uid2) {
+    return rubrics.some(function(r) { return r.ui === uid2 && (r.h || r.m || r.l); });
+  }
+
+  /* === 교육과정 불러오기 === */
+  var PRESET = (typeof window !== "undefined" && window.CURRICULUM_PRESET) ? window.CURRICULUM_PRESET : {};
+
+  function guessGrade() {
+    var sub = subjects.find(function(s) { return s.id === bi; });
+    if (!sub) return "";
+    var cids = sub.cis || (sub.ci ? [sub.ci] : []);
+    if (!cids.length) return "";
+    var cls = classes.find(function(c) { return c.id === cids[0]; });
+    if (!cls) return "";
+    var m = cls.n.match(/(중|고)\s*(\d)/);
+    return m ? m[1] + m[2] : "";
+  }
+
+  function openImport() {
+    var g = guessGrade();
+    setImpG(g);
+    var sub = subjects.find(function(s) { return s.id === bi; });
+    var sname = sub ? sub.na : "";
+    var presetSubs = (g && PRESET[g]) ? Object.keys(PRESET[g]) : [];
+    setImpS(presetSubs.indexOf(sname) >= 0 ? sname : "");
+    setImpSel({});
+    setShowImp(true);
+  }
+
+  function impUnitList() {
+    if (!impG || !impS) return [];
+    return (PRESET[impG] && PRESET[impG][impS]) ? PRESET[impG][impS] : [];
+  }
+
+  function toggleImpAll() {
+    var arr = impUnitList();
+    var anyUnsel = arr.some(function(_, i) { return !impSel[i]; });
+    var ns = {};
+    if (anyUnsel) arr.forEach(function(_, i) { ns[i] = true; });
+    setImpSel(ns);
+  }
+
+  function doImport() {
+    var arr = impUnitList();
+    var picked = arr.filter(function(_, i) { return impSel[i]; });
+    if (!picked.length) { props.toast("단원을 선택하세요"); return; }
+    var curUnits = props.loadT("u");
+    var curRubrics = props.loadT("r");
+    var maxOr = filteredUnits.reduce(function(mx, u) { return Math.max(mx, u.or); }, 0);
+    var added = 0, skipped = 0;
+    picked.forEach(function(p) {
+      if (curUnits.some(function(u) { return u.bi === bi && (u.sm || 1) === sm && u.na === p.u; })) { skipped++; return; }
+      maxOr++;
+      var nid = uid();
+      curUnits = curUnits.concat([{id: nid, bi: bi, na: p.u, or: maxOr, sm: sm}]);
+      curRubrics = curRubrics.concat([{id: uid(), ui: nid, h: p.h || "", m: p.m || "", l: p.l || ""}]);
+      added++;
+    });
+    props.saveT("u", curUnits); setUnits(curUnits);
+    props.saveT("r", curRubrics); setRubrics(curRubrics);
+    setShowImp(false); setImpSel({});
+    props.toast(added + "개 단원 불러옴" + (skipped ? " (" + skipped + "개 중복 제외)" : ""));
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">📝</span>단원 / 평가기준</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center mb-12">
+          <select value={bi} onChange={function(e){setBi(e.target.value);}} style={{width:220}}>
+            <option value="">과목 선택</option>
+            {subjects.map(function(s) {
+              return <option key={s.id} value={s.id}>{s.na}</option>;
+            })}
+          </select>
+          <div className="flex gap-8" style={{marginLeft:8}}>
+            <button className={"num-btn" + (sm===1?" active":"")} style={{width:"auto", padding:"0 16px"}} onClick={function(){setSm(1);}}>1학기</button>
+            <button className={"num-btn" + (sm===2?" active":"")} style={{width:"auto", padding:"0 16px"}} onClick={function(){setSm(2);}}>2학기</button>
+          </div>
+        </div>
+        {bi && (
+          <div className="flex gap-8">
+            <input type="text" placeholder={sm + "학기 단원명 (예: 7. 안전한 이동)"} value={uname} onChange={function(e){setUname(e.target.value);}} style={{flex:1}}
+              onKeyDown={function(e) { if (e.key === "Enter") addUnit(); }} />
+            <button className="btn btn-pink" onClick={addUnit}>추가</button>
+          </div>
+        )}
+        {bi && (
+          <button className="btn btn-mint" style={{marginTop:12}} onClick={openImport}>📥 교육과정에서 평가기준 불러오기</button>
+        )}
+      </div>
+
+      <div className="card-list">
+        {filteredUnits.map(function(u, idx) {
+          return (
+            <div key={u.id} className="card-item glass">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-8">
+                  <div className="flex-col" style={{gap:2, display:"flex"}}>
+                    <button className="btn btn-ghost" style={{padding:"2px 6px", fontSize:10, lineHeight:1}}
+                      disabled={idx === 0} onClick={function() { moveUnit(u.id, -1); }}>▲</button>
+                    <button className="btn btn-ghost" style={{padding:"2px 6px", fontSize:10, lineHeight:1}}
+                      disabled={idx === filteredUnits.length - 1} onClick={function() { moveUnit(u.id, 1); }}>▼</button>
+                  </div>
+                  <span style={{fontWeight:600}}>{u.na}</span>
+                  {hasRubric(u.id) ? <span className="tag tag-mint">✓ 등록됨</span> : <span className="tag tag-red">✗ 미등록</span>}
+                </div>
+                <div className="flex gap-8">
+                  <button className="btn btn-lavender btn-sm" onClick={function() { openRubric(u.id); }}>평가기준</button>
+                  <button className="btn btn-red btn-sm" onClick={function() { deleteUnit(u.id); }}>삭제</button>
+                </div>
+              </div>
+
+              {editUid === u.id && (
+                <div className="glass" style={{padding:16, marginTop:8}}>
+                  <div className="mb-12">
+                    <p style={{fontWeight:600, color:"#059669", marginBottom:6}}>🟢 상</p>
+                    <textarea value={rH} onChange={function(e){setRH(e.target.value);}} placeholder="상 수준 평가기준"
+                      style={{borderColor:"rgba(52,211,153,0.3)"}} />
+                  </div>
+                  <div className="mb-12">
+                    <p style={{fontWeight:600, color:"#d97706", marginBottom:6}}>🟡 중</p>
+                    <textarea value={rM} onChange={function(e){setRM(e.target.value);}} placeholder="중 수준 평가기준"
+                      style={{borderColor:"rgba(251,191,36,0.3)"}} />
+                  </div>
+                  <div className="mb-12">
+                    <p style={{fontWeight:600, color:"#e11d48", marginBottom:6}}>🔴 하</p>
+                    <textarea value={rL} onChange={function(e){setRL(e.target.value);}} placeholder="하 수준 평가기준"
+                      style={{borderColor:"rgba(251,113,133,0.3)"}} />
+                  </div>
+                  <div className="flex gap-8">
+                    <button className="btn btn-pink btn-sm" onClick={saveRubric}>저장</button>
+                    <button className="btn btn-ghost btn-sm" onClick={function(){setEditUid(null);}}>취소</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {showImp && (
+        <div className="modal-overlay" onClick={function() { setShowImp(false); }}>
+          <div className="modal-box" style={{maxWidth:600, width:"90%", textAlign:"left", maxHeight:"82vh", overflowY:"auto"}} onClick={function(e) { e.stopPropagation(); }}>
+            <h3 style={{textAlign:"center", marginBottom:6}}>📥 교육과정 평가기준 불러오기</h3>
+            <p className="text-sm text-sub mb-16" style={{textAlign:"center"}}>선택한 단원이 <b>{sm}학기</b>로 추가됩니다</p>
+            <div className="flex gap-8 mb-16">
+              <select value={impG} onChange={function(e){ setImpG(e.target.value); setImpS(""); setImpSel({}); }} style={{flex:1}}>
+                <option value="">학년</option>
+                {Object.keys(PRESET).map(function(g) { return <option key={g} value={g}>{g}</option>; })}
+              </select>
+              <select value={impS} onChange={function(e){ setImpS(e.target.value); setImpSel({}); }} style={{flex:2}}>
+                <option value="">과목</option>
+                {(impG && PRESET[impG] ? Object.keys(PRESET[impG]) : []).map(function(s) { return <option key={s} value={s}>{s}</option>; })}
+              </select>
+            </div>
+            {impG && impS && impUnitList().length > 0 && (
+              <React.Fragment>
+                <div className="flex items-center justify-between mb-12">
+                  <span className="text-sm" style={{fontWeight:600}}>단원 {impUnitList().length}개 · 선택 {Object.keys(impSel).length}개</span>
+                  <button className="btn btn-ghost btn-sm" onClick={toggleImpAll}>전체 선택 / 해제</button>
+                </div>
+                {impUnitList().map(function(p, i) {
+                  return (
+                    <label key={i} className="glass mb-8" style={{padding:12, display:"flex", gap:10, alignItems:"flex-start", cursor:"pointer"}}>
+                      <input type="checkbox" checked={!!impSel[i]} style={{marginTop:4, width:"auto"}}
+                        onChange={function(e) {
+                          var ns = Object.assign({}, impSel);
+                          if (e.target.checked) ns[i] = true; else delete ns[i];
+                          setImpSel(ns);
+                        }} />
+                      <div style={{flex:1}}>
+                        <p style={{fontWeight:700, marginBottom:6}}>{p.u}</p>
+                        <div className="rubric-preview" style={{marginTop:0}}>
+                          <div className="rp-row"><span className="rp-label" style={{color:"#059669"}}>상: </span>{p.h || "—"}</div>
+                          <div className="rp-row"><span className="rp-label" style={{color:"#d97706"}}>중: </span>{p.m || "—"}</div>
+                          <div className="rp-row"><span className="rp-label" style={{color:"#e11d48"}}>하: </span>{p.l || "—"}</div>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </React.Fragment>
+            )}
+            {impG && impS && impUnitList().length === 0 && (
+              <p className="text-sub text-center" style={{padding:"20px 0"}}>해당 과목에 등록된 단원이 없습니다.</p>
+            )}
+            <div className="flex gap-8 mt-16" style={{justifyContent:"center"}}>
+              <button className="btn btn-ghost" onClick={function(){ setShowImp(false); }}>취소</button>
+              <button className="btn btn-pink" onClick={doImport}>선택 단원 추가</button>
+            </div>
+            <p className="text-sm text-sub mt-12" style={{textAlign:"center"}}>※ 불러온 뒤 각 단원의 <b>평가기준</b> 버튼으로 바로 수정할 수 있습니다</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================
+   MEMO
+   ============================ */
+function PageMemo(props) {
+  var subjects = props.loadT("b");
+  var classes = props.loadT("c");
+  var allStudents = props.loadT("s");
+  var units = props.loadT("u");
+  var rubrics = props.loadT("r");
+  var _bi = useState("");
+  var bi = _bi[0], setBi = _bi[1];
+  var _sm = useState(1);
+  var sm = _sm[0], setSm = _sm[1];
+  var _si = useState("");
+  var si = _si[0], setSi = _si[1];
+  var _memos = useState(function() { return props.loadT("m"); });
+  var memos = _memos[0], setMemos = _memos[1];
+  var _savedAt = useState(null);
+  var savedAt = _savedAt[0], setSavedAt = _savedAt[1];
+
+  var selectedSub = subjects.find(function(s) { return s.id === bi; });
+  var subCids = selectedSub ? (selectedSub.cis || (selectedSub.ci ? [selectedSub.ci] : [])) : [];
+  var classStudents = selectedSub ? allStudents.filter(function(s) { return subCids.indexOf(s.ci) >= 0; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
+  var selectedStudent = allStudents.find(function(s) { return s.id === si; });
+  var filteredUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === sm; }).sort(function(a,b) { return a.or - b.or; });
+
+  function getMemo(unitId) {
+    return memos.find(function(m) { return m.si === si && m.ui === unitId; }) || null;
+  }
+
+  /* 메모 업데이트 + 즉시 localStorage 저장 (auto-save) */
+  function updateMemoField(unitId, field, value) {
+    var newMemos;
+    var existing = memos.find(function(m) { return m.si === si && m.ui === unitId; });
+    if (existing) {
+      newMemos = memos.map(function(m) {
+        if (m.si === si && m.ui === unitId) {
+          var obj = {}; obj[field] = value;
+          return Object.assign({}, m, obj);
+        }
+        return m;
+      });
+    } else {
+      var nm = {id: uid(), si: si, ui: unitId, tx: "", lv: ""};
+      nm[field] = value;
+      newMemos = memos.concat([nm]);
+    }
+    setMemos(newMemos);
+    props.saveT("m", newMemos);  /* 즉시 저장 */
+    setSavedAt(new Date());
+  }
+
+  function onSubjectChange(e) {
+    setBi(e.target.value);
+    setSi("");
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">✏️</span>단원별 메모</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center" style={{flexWrap:"wrap"}}>
+          <select value={bi} onChange={onSubjectChange} style={{width:200}}>
+            <option value="">과목 선택</option>
+            {subjects.map(function(s) {
+              var cids = s.cis || (s.ci ? [s.ci] : []);
+              var clNames = cids.map(function(cid) { var c = classes.find(function(c) { return c.id === cid; }); return c ? c.n : ""; }).filter(Boolean).join(", ");
+              return <option key={s.id} value={s.id}>{s.na} ({clNames || "미연결"})</option>;
+            })}
+          </select>
+          <div className="flex gap-8">
+            <button className={"num-btn" + (sm===1?" active":"")} style={{width:"auto", padding:"0 16px"}} onClick={function(){setSm(1);}}>1학기</button>
+            <button className={"num-btn" + (sm===2?" active":"")} style={{width:"auto", padding:"0 16px"}} onClick={function(){setSm(2);}}>2학기</button>
+          </div>
+          <select value={si} onChange={function(e){setSi(e.target.value);}} style={{width:160}}>
+            <option value="">학생 선택</option>
+            {classStudents.map(function(s) {
+              return <option key={s.id} value={s.id}>{s.nu}. {s.na}</option>;
+            })}
+          </select>
+          {savedAt && (
+            <span className="tag tag-mint" style={{fontSize:11, marginLeft:"auto"}}>
+              ✓ 자동 저장됨 · {savedAt.toTimeString().substring(0,5)}
+            </span>
+          )}
+        </div>
+        {selectedStudent && selectedStudent.ch && (
+          <div className="tag mt-12" style={{fontSize:13, padding:"6px 14px"}}>
+            특성: {selectedStudent.ch}
+          </div>
+        )}
+      </div>
+
+      {!bi && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">과목을 먼저 선택하세요.</p>
+        </div>
+      )}
+
+      {bi && !si && classStudents.length > 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">학생을 선택하면 {sm}학기 단원별 메모를 작성할 수 있습니다.</p>
+        </div>
+      )}
+
+      {bi && classStudents.length === 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">해당 반에 등록된 학생이 없습니다. 반 관리에서 학생을 먼저 등록하세요.</p>
+        </div>
+      )}
+
+      {si && filteredUnits.length > 0 && (
+        <React.Fragment>
+          {filteredUnits.map(function(u) {
+            var memo = getMemo(u.id);
+            var rubric = rubrics.find(function(r) { return r.ui === u.id; });
+            var currentLv = memo ? memo.lv : "";
+            var currentTx = memo ? memo.tx : "";
+
+            return (
+              <div key={u.id} className="memo-unit-card glass">
+                <p style={{fontWeight:700, marginBottom:12}}>{u.na}</p>
+                <div className="memo-unit-inner">
+                  <div className="memo-unit-left">
+                    <div className="level-btn-group">
+                      <button className={"level-btn h" + (currentLv === "h" ? " active" : "")}
+                        onClick={function() { updateMemoField(u.id, "lv", "h"); }}>상</button>
+                      <button className={"level-btn m" + (currentLv === "m" ? " active" : "")}
+                        onClick={function() { updateMemoField(u.id, "lv", "m"); }}>중</button>
+                      <button className={"level-btn l" + (currentLv === "l" ? " active" : "")}
+                        onClick={function() { updateMemoField(u.id, "lv", "l"); }}>하</button>
+                    </div>
+                  </div>
+                  <div className="memo-unit-right">
+                    <textarea value={currentTx}
+                      onChange={function(e) { updateMemoField(u.id, "tx", e.target.value); }}
+                      placeholder="예: 5까지는 셈, 받아올림 아직 못함" />
+                  </div>
+                </div>
+                {rubric && (
+                  <div className="rubric-preview">
+                    {rubric.h && <div className="rp-row"><span className="rp-label" style={{color:"#059669"}}>상: </span>{rubric.h}</div>}
+                    {rubric.m && <div className="rp-row"><span className="rp-label" style={{color:"#d97706"}}>중: </span>{rubric.m}</div>}
+                    {rubric.l && <div className="rp-row"><span className="rp-label" style={{color:"#e11d48"}}>하: </span>{rubric.l}</div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <button className="btn btn-pink w-full" style={{marginTop:12}} onClick={function() { props.saveT("m", memos); setSavedAt(new Date()); props.toast("저장 완료"); }}>💾 전체 저장</button>
+        </React.Fragment>
+      )}
+
+      {si && filteredUnits.length === 0 && (
+        <div className="glass text-center" style={{padding:40}}>
+          <p className="text-sub">{sm}학기에 등록된 단원이 없습니다. 단원/평가기준에서 먼저 등록하세요.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================
+   AI GENERATION
+   ============================ */
+function PageAI(props) {
+  var subjects = props.loadT("b");
+  var classes = props.loadT("c");
+  var allStudents = props.loadT("s");
+  var units = props.loadT("u");
+  var rubrics = props.loadT("r");
+  var memos = props.loadT("m");
+
+  var _bi = useState("");
+  var bi = _bi[0], setBi = _bi[1];
+  var _si = useState("");
+  var si = _si[0], setSi = _si[1];
+  var _results = useState([]);  /* {id, name, nu, sm, text} */
+  var results = _results[0], setResults = _results[1];
+  var _loading = useState(false);
+  var loading = _loading[0], setLoading = _loading[1];
+  var _loadingSm = useState(0);  /* 현재 생성 중인 학기 (1 또는 2), 0이면 대기 */
+  var loadingSm = _loadingSm[0], setLoadingSm = _loadingSm[1];
+  var _prog = useState(null);    /* 일괄 생성 진행 상황 {done, total, name} */
+  var prog = _prog[0], setProg = _prog[1];
+  var _volMode = useState("default");  /* "tiny" | "short" | "default" */
+  var volMode = _volMode[0], setVolMode = _volMode[1];
+
+  /* 분량 모드별 설정 */
+  var VOL_CONFIG = {
+    tiny:    {label: "아주 적게", desc: "40자 이하 (약 120바이트)", minB: 60, maxB: 120, chars: "20~40자"},
+    short:   {label: "적게", desc: "80자 이하 (약 240바이트)", minB: 120, maxB: 240, chars: "40~80자"},
+    "default": {label: "기본", desc: "700~900바이트 (약 230~300자)", minB: 700, maxB: 900, chars: "230~300자"}
+  };
+  var vol = VOL_CONFIG[volMode];
+
+  /* AI 결과 저장/불러오기 */
+  function aiResultKey() { return "ai_" + bi; }
+  function loadSavedResults(subjectId) {
+    if (!subjectId) return [];
+    var saved = props.loadT("ai_" + subjectId);
+    return saved && saved.length > 0 ? saved : [];
+  }
+
+  /* results 변경 시 자동 저장 */
+  useEffect(function() {
+    if (bi && results.length > 0) {
+      props.saveT("ai_" + bi, results);
+    }
+  }, [results, bi]);
+
+  /* 과목 변경 시 저장된 결과 불러오기 */
+  function onSubjectChange(newBi) {
+    setBi(newBi);
+    setSi("");
+    if (newBi) {
+      var saved = loadSavedResults(newBi);
+      setResults(saved);
+    } else {
+      setResults([]);
+    }
+  }
+
+  var selectedSub = subjects.find(function(s) { return s.id === bi; });
+  var subCids = selectedSub ? (selectedSub.cis || (selectedSub.ci ? [selectedSub.ci] : [])) : [];
+  var classStudents = selectedSub ? allStudents.filter(function(s) { return subCids.indexOf(s.ci) >= 0; }).sort(function(a,b) { return a.nu - b.nu; }) : [];
+
+  function getSystemPrompt() {
+    var volRule = "";
+    if (volMode === "tiny") {
+      volRule = "[7. 분량 — 아주 짧게]\n- 1~2문장, 띄어쓰기 포함 40자(약 80바이트) 이하로 매우 간결하게 작성.\n- 핵심 수행 결과 1가지만 압축하여 기술. 수식어 완전 배제.";
+    } else if (volMode === "short") {
+      volRule = "[7. 분량 — 짧게]\n- 2~3문장, 띄어쓰기 포함 80자(약 160바이트) 이하로 간결하게 작성.\n- 핵심 수행 결과 2~3가지를 압축하여 기술.";
+    } else {
+      volRule = "[7. 분량 — UTF-8 기준 700~900바이트 엄수]\n- 반드시 700~900바이트 이내 (한글 약 230~300자).\n- 900바이트 절대 초과 금지. 900바이트에 가까울수록 좋음.\n- 불필요한 수식어·중복 표현 제거. 핵심 행동과 도달 수준 중심으로 압축.";
+    }
+
+    return "당신은 특수학교 교과학습발달상황 작성 전문가입니다. 통지표에 그대로 나가는 공식 기록이므로 다음 원칙을 엄격히 지킵니다.\n\n[1. 문장 종결 — 완결형 명사형]\n- 모든 문장은 '~함', '~임'으로 끝낸다. 진행형 '~하고 있음'은 절대 금지.\n  - (X) 관찰하고 있음 → (O) 관찰함\n  - (X) 참여함을 보임 → (O) 참여함\n\n[2. 관찰자 시점 금지 — 학생 주체 능동형]\n- '~보임', '~것으로 나타남', '~모습이 관찰됨' 등 관찰자 시점 표현 전면 금지.\n- 학생을 주어로 한 능동형 동사로만 기술한다: 관찰함, 탐색함, 응시함, 선택함, 표현함, 구분함, 조작함, 참여함, 경험함, 접촉함, 시도함, 수행함, 완성함 등.\n  - (X) 흥미를 보임 → (O) 흥미를 가지고 참여함\n  - (X) 집중하는 모습이 관찰됨 → (O) 끝까지 집중하여 과제를 완성함\n\n[3. 부정 서술 배제 — 할 수 있는 것 중심]\n- '부족함', '미흡함', '어려워함', '못함', '하지 못함' 등 학생의 결손·결핍을 드러내는 서술 금지.\n- 학생이 실제로 수행한 것, 도달한 수준, 참여한 활동을 중심으로 긍정적으로 기술.\n- '하' 수준 학생도 참여·경험·접촉·탐색·반응 등 능동적 행동이 있으므로, 그 행동을 주어로 삼아 서술.\n  - (X) 덧셈을 어려워하나 단순 수세기는 가능함 → (O) 10 이내의 수를 세고 구체물을 수 순서에 맞게 배열함\n\n[4. 교사 개입 표현 처리 — 기본 제거, 불가피 시 '촉진']\n- 원칙적으로 '교사의 도움을 받아', '교사와 함께', '신체적 보조', '교사가 손을 잡고' 등 교사 개입 문구는 전부 삭제하고, 학생이 최종적으로 수행한 행동만 기술한다.\n  - (X) 교사의 손을 잡고 공을 굴림 → (O) 공을 앞쪽 방향으로 굴림\n  - (X) 교사와 함께 색칠함 → (O) 색연필로 도형 안을 색칠함\n- 도움을 빼면 서술이 성립하지 않는 경우에만 예외적으로 '~ 촉진'이라는 전문 용어로 바꿔 사용 가능: '신체적 촉진', '언어적 촉진', '시각적 촉진', '몸짓 촉진' 등. 단, 남용 금지.\n  - (X) 교사의 도움을 받아 숟가락을 잡음 → (O) 신체적 촉진을 통해 숟가락을 바르게 쥐고 음식물을 입으로 옮김\n\n[5. 상호명·외래어 순화]\n- 특정 상호·브랜드명 사용 금지. 일반 명사로 대체.\n  - 유튜브 → 동영상 공유 서비스 / 카카오톡 → 메신저 / 네이버 → 포털 사이트\n- 외래어·외국어 표현은 되도록 사용하지 않고 우리말로 순화한다. 일반적으로 통용되는 우리말이 있는 경우 반드시 우리말을 우선 사용.\n  - (X) 컬러 → (O) 색깔 / (X) 체크함 → (O) 확인함 / (X) 미션 → (O) 과제\n  - (X) 테이블 → (O) 책상 / (X) 스티커 → (O) 붙임 딱지 / (X) 게임 → (O) 놀이\n  - 단, 해당 우리말 표현이 어색하거나 해당 맥락에서 뜻이 불분명한 경우에 한해 외래어 허용.\n\n[6. 내용 구성 — 평가기준 골격 + 메모 구체화]\n- 교사가 선택한 도달 수준(상/중/하)에 해당하는 평가기준 문구를 핵심 골격으로 삼는다.\n- 교사 메모의 구체적 행동·수행 내용을 자연스럽게 녹여 서술한다.\n- 메모가 비문이거나 구어체여도 의도를 파악하여 정제된 문장으로 변환.\n- 학생 특성을 고려해 서술의 톤과 초점을 조절한다.\n- 학생마다 표현·어휘·문장 구성을 다르게 하여 기계적 반복을 피한다.\n\n" + volRule + "\n\n[8. 출력 형식]\n- 서두·마무리 인사 없이 본문 서술만 출력한다.\n- '다음과 같음', '아래와 같이', '정리하면' 등 메타 문구 금지.\n- 제목, 불릿, 번호, 줄바꿈 구분 없이 하나의 서술 문단으로 출력한다.";
+  }
+
+  function buildPrompt(student, semester) {
+    var subUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === semester; }).sort(function(a,b) { return a.or - b.or; });
+    var lines = [];
+    lines.push("학생: " + student.na + " " + student.nu + "번");
+    lines.push("특성: " + (student.ch || "없음"));
+    lines.push("과목: " + (selectedSub ? selectedSub.na : ""));
+    lines.push("학기: " + semester + "학기");
+    lines.push("");
+
+    subUnits.forEach(function(u) {
+      var memo = memos.find(function(m) { return m.si === student.id && m.ui === u.id; });
+      var rubric = rubrics.find(function(r) { return r.ui === u.id; });
+      var lvLabel = "";
+      if (memo && memo.lv === "h") lvLabel = "상";
+      else if (memo && memo.lv === "m") lvLabel = "중";
+      else if (memo && memo.lv === "l") lvLabel = "하";
+
+      lines.push("[단원: " + u.na + "]");
+      lines.push("교사 판단 도달수준: " + (lvLabel || "미선택"));
+      lines.push("평가기준 상: " + (rubric ? rubric.h : "미등록"));
+      lines.push("평가기준 중: " + (rubric ? rubric.m : "미등록"));
+      lines.push("평가기준 하: " + (rubric ? rubric.l : "미등록"));
+      lines.push("교사 메모: " + (memo ? memo.tx : "없음"));
+      lines.push("");
+    });
+
+    var volInstruction = "";
+    if (volMode === "tiny") {
+      volInstruction = "위 자료로 " + semester + "학기 교과학습발달상황을 작성. 띄어쓰기 포함 40자 이하, 1~2문장으로 매우 간결하게.";
+    } else if (volMode === "short") {
+      volInstruction = "위 자료로 " + semester + "학기 교과학습발달상황을 작성. 띄어쓰기 포함 80자 이하, 2~3문장으로 간결하게.";
+    } else {
+      volInstruction = "위 자료로 " + semester + "학기 교과학습발달상황을 작성. UTF-8 기준 700~900바이트(한글 약 230~300자) 이내 엄수.";
+    }
+    lines.push(volInstruction);
+    return lines.join("\n");
+  }
+
+  function callAI(student, semester) {
+    var subUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === semester; });
+    if (subUnits.length === 0) {
+      return Promise.resolve("[생성 불가] " + semester + "학기에 등록된 단원이 없습니다.");
+    }
+
+    return fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "x-app-token": APP_TOKEN},
+      body: JSON.stringify({
+        model: AI_MODEL,
+        max_tokens: 800,
+        system: getSystemPrompt(),
+        messages: [{role: "user", content: buildPrompt(student, semester)}]
+      })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.content && data.content[0] && data.content[0].text) {
+        return data.content[0].text.trim();
+      }
+      if (data.error) {
+        return "[오류] " + (data.error.message || JSON.stringify(data.error));
+      }
+      return "[오류] 응답을 받지 못했습니다.";
+    })
+    .catch(function(err) {
+      return "[오류] " + err.message;
+    });
+  }
+
+  function generateSingle(semester) {
+    if (!si) { props.toast("학생을 선택하세요"); return; }
+    var student = allStudents.find(function(s) { return s.id === si; });
+    if (!student) return;
+    setLoading(true);
+    setLoadingSm(semester);
+    /* 기존 결과 중 같은 학생·같은 학기만 제거하고 유지 */
+    setResults(function(prev) { return prev.filter(function(r) { return !(r.id === student.id && r.sm === semester); }); });
+    callAI(student, semester).then(function(text) {
+      setResults(function(prev) {
+        return prev.concat([{id: student.id, name: student.na, nu: student.nu, sm: semester, text: text}]);
+      });
+      setLoading(false);
+      setLoadingSm(0);
+    });
+  }
+
+  /* 이미 정상 생성된 결과가 있는 학생인지. 오류·생성불가는 다시 만들어야 하므로 제외 */
+  function hasGoodResult(studentId, semester) {
+    var r = results.find(function(x) { return x.id === studentId && x.sm === semester; });
+    if (!r) return false;
+    var t = (r.text || "").trim();
+    return !!t && t.indexOf("[오류]") !== 0 && t.indexOf("[생성 불가]") !== 0 && t !== "생성 중...";
+  }
+
+  function generateAll(semester) {
+    if (classStudents.length === 0) { props.toast("학생이 없습니다"); return; }
+
+    /* 이미 만들어 둔 학생은 건너뛴다. 같은 내용을 다시 만들면 API 사용량만 낭비된다.
+       다시 만들고 싶으면 학생별 [재생성] 이나 [전체 결과 초기화] 를 쓴다. */
+    var todo = classStudents.filter(function(s) { return !hasGoodResult(s.id, semester); });
+    var skipped = classStudents.length - todo.length;
+
+    if (todo.length === 0) {
+      props.toast(semester + "학기는 이미 " + classStudents.length + "명 모두 생성되어 있습니다");
+      return;
+    }
+
+    setLoading(true);
+    setLoadingSm(semester);
+    /* 다시 만들 학생의 이전(오류) 결과만 제거하고 나머지는 보존 */
+    var todoIds = todo.map(function(s) { return s.id; });
+    setResults(function(prev) {
+      return prev.filter(function(r) { return !(r.sm === semester && todoIds.indexOf(r.id) >= 0); });
+    });
+
+    var idx = 0;
+    setProg({done: 0, total: todo.length, name: todo[0].na});
+    function next() {
+      if (idx >= todo.length) {
+        setLoading(false);
+        setLoadingSm(0);
+        setProg(null);
+        props.toast(todo.length + "명 생성 완료" + (skipped > 0 ? " · " + skipped + "명은 이미 있어 건너뜀" : ""));
+        return;
+      }
+      var student = todo[idx];
+      idx++;
+      setProg({done: idx - 1, total: todo.length, name: student.na});
+      callAI(student, semester).then(function(text) {
+        setResults(function(prev) {
+          return prev.concat([{id: student.id, name: student.na, nu: student.nu, sm: semester, text: text}]);
+        });
+        next();
+      });
+    }
+    next();
+  }
+
+  function updateResultText(rid, rsm, text) {
+    setResults(function(prev) {
+      return prev.map(function(r) {
+        if (r.id === rid && r.sm === rsm) return Object.assign({}, r, {text: text});
+        return r;
+      });
+    });
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() {
+        props.toast("복사 완료");
+      }).catch(function() {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); props.toast("복사 완료"); }
+    catch(e) { props.toast("복사 실패 — 수동으로 복사하세요"); }
+    document.body.removeChild(ta);
+  }
+
+  function copyAllOfSemester(semester) {
+    var all = results.filter(function(r) { return r.sm === semester; })
+      .sort(function(a,b) { return a.nu - b.nu; })
+      .map(function(r) { return r.nu + ". " + r.name + "\n" + r.text; })
+      .join("\n\n---\n\n");
+    copyText(all);
+  }
+
+  /* 나이스 자동입력 확장용 JSON 복사.
+     확장은 성명으로 행을 찾고, 동명이인일 때만 번호(num)로 좁힌다. */
+  function copyForNeis(semester) {
+    var bad = 0;
+    var items = results.filter(function(r) { return r.sm === semester; })
+      .filter(function(r) {
+        var t = (r.text || "").trim();
+        if (!t || t.indexOf("[생성 불가]") === 0 || t.indexOf("[오류]") === 0 || t === "생성 중...") { bad++; return false; }
+        return true;
+      })
+      .sort(function(a, b) { return a.nu - b.nu; })
+      .map(function(r) { return {name: r.name, num: String(r.nu), text: r.text.trim()}; });
+
+    if (items.length === 0) { props.toast("복사할 결과가 없습니다"); return; }
+    copyText(JSON.stringify(items, null, 2));
+    if (bad > 0) props.toast(bad + "명은 생성 실패라 제외했습니다");
+  }
+
+  function regenerateSingle(studentId, semester) {
+    var student = allStudents.find(function(s) { return s.id === studentId; });
+    if (!student) return;
+    setResults(function(prev) {
+      return prev.map(function(r) {
+        if (r.id === studentId && r.sm === semester) return Object.assign({}, r, {text: "생성 중..."});
+        return r;
+      });
+    });
+    callAI(student, semester).then(function(text) {
+      setResults(function(prev) {
+        return prev.map(function(r) {
+          if (r.id === studentId && r.sm === semester) return Object.assign({}, r, {text: text});
+          return r;
+        });
+      });
+    });
+  }
+
+  function clearResults() {
+    setResults([]);
+    if (bi) props.saveT("ai_" + bi, []);
+    props.toast("결과를 모두 지웠습니다");
+  }
+
+  function removeResult(studentId, semester) {
+    setResults(function(prev) {
+      return prev.filter(function(r) { return !(r.id === studentId && r.sm === semester); });
+    });
+  }
+
+  /* 학기별 데이터 준비도 체크 */
+  function checkReadiness(semester) {
+    var subUnits = units.filter(function(u) { return u.bi === bi && (u.sm || 1) === semester; });
+    if (subUnits.length === 0) return {unitCount: 0, rubricCount: 0, studentsWithData: 0};
+
+    var rubricIds = rubrics.filter(function(r) { return subUnits.some(function(u) { return u.id === r.ui; }); }).map(function(r) { return r.ui; });
+
+    var studentsWithData = classStudents.filter(function(s) {
+      return subUnits.some(function(u) {
+        return memos.some(function(m) { return m.si === s.id && m.ui === u.id && (m.tx || m.lv); });
+      });
+    }).length;
+
+    return {
+      unitCount: subUnits.length,
+      rubricCount: rubricIds.length,
+      studentsWithData: studentsWithData
+    };
+  }
+
+  var ready1 = bi ? checkReadiness(1) : null;
+  var ready2 = bi ? checkReadiness(2) : null;
+
+  /* 학기별 결과 그룹핑 */
+  var results1 = results.filter(function(r) { return r.sm === 1; }).sort(function(a,b) { return a.nu - b.nu; });
+  var results2 = results.filter(function(r) { return r.sm === 2; }).sort(function(a,b) { return a.nu - b.nu; });
+
+  function renderResultCard(r) {
+    var bytes = countBytes(r.text);
+    var over = bytes > vol.maxB;
+    var under = bytes < vol.minB && !r.text.startsWith("[");
+    return (
+      <div key={r.id + "-" + r.sm} className="ai-result-card glass">
+        <div className="flex items-center justify-between">
+          <span style={{fontWeight:700}}>{r.nu}. {r.name} <span className="tag" style={{marginLeft:8}}>{r.sm}학기</span></span>
+          <div className="flex gap-8">
+            <button className="btn btn-ghost btn-sm" onClick={function() { copyText(r.text); }}>복사</button>
+            <button className="btn btn-lavender btn-sm" onClick={function() { regenerateSingle(r.id, r.sm); }}>재생성</button>
+            <button className="btn btn-red btn-sm" onClick={function() { removeResult(r.id, r.sm); }}>✕</button>
+          </div>
+        </div>
+        <textarea value={r.text} onChange={function(e) { updateResultText(r.id, r.sm, e.target.value); }} />
+        <div className="flex items-center justify-between" style={{fontSize:12, marginTop:4}}>
+          <span style={{color: over ? "#e11d48" : (under ? "#d97706" : "#059669"), fontWeight:600}}>
+            {bytes} / {vol.maxB} 바이트 {over ? "⚠ 초과" : (under ? "(분량 부족)" : "✓")}
+          </span>
+          <span className="text-sub">권장 {vol.minB}~{vol.maxB}바이트</span>
+        </div>
+      </div>
+    );
+  }
+
+  function renderSemesterBlock(semester, resultArr) {
+    if (resultArr.length === 0) return null;
+    return (
+      <div className="mb-24">
+        <div className="flex items-center justify-between mb-12">
+          <h3 style={{fontSize:18, fontWeight:700}}>📚 {semester}학기 결과 ({resultArr.length}명)</h3>
+          <div className="flex" style={{gap:6}}>
+            {resultArr.length > 1 && (
+              <button className="btn btn-mint btn-sm" onClick={function() { copyAllOfSemester(semester); }}>{semester}학기 전체 복사</button>
+            )}
+            <button className="btn btn-sm" style={{background:"#0f766e", color:"#fff"}}
+              title="나이스 자동입력 확장에 붙여넣을 JSON을 복사합니다"
+              onClick={function() { copyForNeis(semester); }}>📋 [나이스] 복사</button>
+          </div>
+        </div>
+        {resultArr.map(renderResultCard)}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="section-title"><span className="emoji">🤖</span>교과학습발달상황</h2>
+      <div className="glass mb-16" style={{padding:20}}>
+        <div className="flex gap-8 items-center mb-12" style={{flexWrap:"wrap"}}>
+          <select value={bi} onChange={function(e){onSubjectChange(e.target.value);}} style={{width:200}}>
+            <option value="">과목 선택</option>
+            {subjects.map(function(s) {
+              var cids = s.cis || (s.ci ? [s.ci] : []);
+              var clNames = cids.map(function(cid) { var c = classes.find(function(c) { return c.id === cid; }); return c ? c.n : ""; }).filter(Boolean).join(", ");
+              return <option key={s.id} value={s.id}>{s.na} ({clNames || "미연결"})</option>;
+            })}
+          </select>
+          <select value={si} onChange={function(e){setSi(e.target.value);}} style={{width:160}}>
+            <option value="">학생 선택</option>
+            {classStudents.map(function(s) {
+              return <option key={s.id} value={s.id}>{s.nu}. {s.na}</option>;
+            })}
+          </select>
+        </div>
+
+        {/* 학기별 데이터 준비도 안내 */}
+        {bi && (ready1 || ready2) && (
+          <div className="flex gap-8 mb-12" style={{flexWrap:"wrap"}}>
+            <span className={"tag " + (ready1 && ready1.unitCount > 0 && ready1.studentsWithData > 0 ? "tag-mint" : "tag-amber")}>
+              1학기 · 단원 {ready1 ? ready1.unitCount : 0}개 · 평가기준 {ready1 ? ready1.rubricCount : 0}개 · 메모작성 학생 {ready1 ? ready1.studentsWithData : 0}명
+            </span>
+            <span className={"tag " + (ready2 && ready2.unitCount > 0 && ready2.studentsWithData > 0 ? "tag-mint" : "tag-amber")}>
+              2학기 · 단원 {ready2 ? ready2.unitCount : 0}개 · 평가기준 {ready2 ? ready2.rubricCount : 0}개 · 메모작성 학생 {ready2 ? ready2.studentsWithData : 0}명
+            </span>
+          </div>
+        )}
+
+        {/* 분량 선택 */}
+        <div className="mb-12">
+          <p className="text-sm mb-8" style={{fontWeight:600, color:"var(--text-sub)"}}>분량 선택</p>
+          <div className="flex gap-8" style={{flexWrap:"wrap"}}>
+            <button className={"num-btn" + (volMode==="tiny" ? " active" : "")}
+              style={{width:"auto", padding:"0 16px", fontSize:13, height:38}}
+              onClick={function(){setVolMode("tiny");}}>
+              아주 적게 (40자)
+            </button>
+            <button className={"num-btn" + (volMode==="short" ? " active" : "")}
+              style={{width:"auto", padding:"0 16px", fontSize:13, height:38}}
+              onClick={function(){setVolMode("short");}}>
+              적게 (80자)
+            </button>
+            <button className={"num-btn" + (volMode==="default" ? " active" : "")}
+              style={{width:"auto", padding:"0 16px", fontSize:13, height:38}}
+              onClick={function(){setVolMode("default");}}>
+              기본 (230~300자)
+            </button>
+          </div>
+          <p className="text-sm mt-12" style={{color:"var(--text-sub)"}}>{vol.desc}</p>
+        </div>
+
+        {/* 개별 생성 (학기별) */}
+        <div style={{marginBottom:8}}>
+          <p className="text-sm mb-8" style={{fontWeight:600, color:"var(--text-sub)"}}>개별 생성 (선택한 학생 1명)</p>
+          <div className="flex gap-8">
+            <button className="btn btn-pink" onClick={function(){generateSingle(1);}} disabled={loading}>
+              {loading && loadingSm === 1 ? <span className="spinner"></span> : "📝"} 1학기 생성
+            </button>
+            <button className="btn btn-pink" onClick={function(){generateSingle(2);}} disabled={loading}>
+              {loading && loadingSm === 2 ? <span className="spinner"></span> : "📝"} 2학기 생성
+            </button>
+          </div>
+        </div>
+
+        {/* 전체 일괄 (학기별) */}
+        <div style={{marginTop:16, paddingTop:16, borderTop:"1px solid var(--card-border)"}}>
+          <p className="text-sm mb-8" style={{fontWeight:600, color:"var(--text-sub)"}}>전체 일괄 ({classStudents.length}명 · 해당 학기)</p>
+          <div className="flex gap-8">
+            <button className="btn btn-lavender" onClick={function(){generateAll(1);}} disabled={loading}>
+              {loading && loadingSm === 1 ? <span className="spinner"></span> : "📋"} 1학기 전체 일괄
+            </button>
+            <button className="btn btn-lavender" onClick={function(){generateAll(2);}} disabled={loading}>
+              {loading && loadingSm === 2 ? <span className="spinner"></span> : "📋"} 2학기 전체 일괄
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {loading && (
+        <div className="glass text-center" style={{padding:40}}>
+          <div className="spinner" style={{width:32, height:32, marginBottom:12}}></div>
+          {prog ? (
+            <div>
+              <p style={{fontWeight:700}}>{loadingSm}학기 생성 중 · {prog.done + 1} / {prog.total}명</p>
+              <p className="text-sm text-sub" style={{marginTop:4}}>{prog.name} 학생 작성 중…</p>
+              <div style={{marginTop:12, height:6, borderRadius:3, background:"rgba(15,118,110,0.15)", overflow:"hidden"}}>
+                <div style={{height:"100%", width:(Math.round(prog.done / prog.total * 100)) + "%",
+                             background:"var(--pink)", transition:"width .3s"}}></div>
+              </div>
+              <p className="text-sm text-sub" style={{marginTop:10}}>창을 닫지 마세요. 한 명씩 차례로 만듭니다.</p>
+            </div>
+          ) : (
+            <p>{loadingSm}학기 생성 중...</p>
+          )}
+        </div>
+      )}
+
+      {results.length > 0 && !loading && (
+        <div className="flex items-center justify-between mb-12">
+          <span className="tag tag-mint" style={{fontSize:11}}>💾 결과 자동 저장됨 · {results.length}건</span>
+          <button className="btn btn-ghost btn-sm" onClick={clearResults}>전체 결과 초기화</button>
+        </div>
+      )}
+
+      {renderSemesterBlock(1, results1)}
+      {renderSemesterBlock(2, results2)}
+    </div>
+  );
+}
+
+/* ============================
+   RENDER
+   ============================ */
+var root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(App));

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "교과학습발달상황 입력 도우미",
+  "version": "0.1.0",
+  "description": "과정중심평가 앱에서 만든 교과학습발달상황 문장을 나이스 입력칸에 채워 넣습니다. 저장은 하지 않습니다.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["*://*.neis.go.kr/*"],
+  "action": { "default_popup": "popup.html", "default_title": "교과학습발달상황 입력 도우미" },
+  "content_scripts": [
+    {
+      "matches": ["*://*.neis.go.kr/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

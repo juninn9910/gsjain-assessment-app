@@ -1,0 +1,16 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>app.jsx → app.js 빌드</title>
+<style>body{font-family:system-ui;padding:40px;font-size:16px}#log{padding:16px;background:#f1f5f9;border-radius:8px}</style>
+<script src="babel.min.js"></script></head>
+<body>
+<h2>app.jsx → app.js 빌드</h2>
+<p id="log">변환 중...</p>
+<script>
+fetch('../app.jsx').then(r=>r.text()).then(function(src){
+  var out = Babel.transform(src, {presets:['react'], compact:false}).code;
+  return fetch('/save', {method:'POST', body: out}).then(function(r){ return r.text(); });
+}).then(function(msg){
+  document.getElementById('log').textContent = '✅ 완료 — app.js ' + msg.replace('saved','') + ' bytes. 이 창은 닫으셔도 됩니다.';
+}).catch(function(e){
+  document.getElementById('log').textContent = '❌ 실패: ' + e.message;
+});
+</script></body></html>
