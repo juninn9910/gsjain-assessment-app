@@ -29,6 +29,25 @@ function send(msg) {
   });
 }
 
+/* 클립보드에서 바로 가져오기 — Ctrl+V 를 대신한다 */
+$("paste").addEventListener("click", async function () {
+  try {
+    var text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) return say("클립보드가 비어 있습니다. 앱에서 [나이스] 복사를 먼저 누르세요.", "bad");
+    $("json").value = text.trim();
+    $("check").click();
+  } catch (e) {
+    say("클립보드를 읽지 못했습니다. 입력칸을 누르고 Ctrl+V 로 붙여넣어 주세요.", "bad");
+  }
+});
+
+$("clear").addEventListener("click", function () {
+  $("json").value = "";
+  parsed = null;
+  $("fill").disabled = true;
+  $("out").innerHTML = "";
+});
+
 /* 붙여넣은 JSON 검사 + 그리드와 대조 */
 $("check").addEventListener("click", async function () {
   parsed = null;
